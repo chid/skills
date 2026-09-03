@@ -1,0 +1,131 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  # Refresh baked-in skill ratings (positive reaction counts) once a day even
+  # when there are no code pushes, so "Top rated" sort stays current. The build
+  # and deploy only run when the counts actually changed, so quiet days don't
+  # produce a redundant no-op deployment (see the "Fetch skill ratings" step).
+  schedule:
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: write # commit the refreshed ratings snapshot back to main
+  pages: write
+  id-token: write
+  discussions: read
+
+# Allow one concurrent deployment, skipping runs queued between in-progress and latest.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.ratings.outputs.should_deploy }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Fetch skill ratings
+        id: ratings
+        run: |
+          npm run ratings:fetch
+          if git diff --quiet -- src/data/ratings.json; then
+            changed=false
+          else
+            changed=true
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          # Always build/deploy on code pushes and manual runs; on the daily
+          # cron, only when the reaction counts actually changed.
+          if [ "${{ github.event_name }}" != "schedule" ] || [ "$changed" = "true" ]; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "No rating changes on scheduled run; skipping build and deploy."
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Persist refreshed ratings
+        if: steps.ratings.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/data/ratings.json
+          git commit -m "chore(ratings): refresh skill reaction counts"
+          # A GITHUB_TOKEN push does not retrigger workflows, so this run still
+          # owns the deploy below; the commit only keeps tomorrow's diff stable.
+          git push || echo "::warning::Could not push refreshed ratings; will retry next run."
+      # Regenerate every skill page + bundle from submissions/ before building.
+      # PR CI only commits generated content back to SAME-REPO PR branches; fork
+      # PRs are validate-only, so their src/content/skills/<slug>.md never lands
+      # on main and the skill would 404 / be missing from the gallery. Importing
+      # here makes the deployed site reflect submissions/ regardless of how a PR
+      # was merged. Idempotent: it rewrites the same files a same-repo PR did.
+      - name: Import skill submissions
+        if: steps.ratings.outputs.should_deploy == 'true'
+        run: npm run import:submissions
+      - name: Build
+        if: steps.ratings.outputs.should_deploy == 'true'
+        run: npm run build
+      - name: Upload Pages artifact
+        if: steps.ratings.outputs.should_deploy == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      # deploy-pages hard-caps its polling at 10 minutes and cancels at that
+      # boundary, even when Pages finishes the deployment shortly afterward.
+      - name: Verify Pages deployment after action timeout
+        if: steps.deployment.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in {1..120}; do
+            if ! status="$(gh api "repos/${GITHUB_REPOSITORY}/pages/deployments/${GITHUB_SHA}" --jq '.status')"; then
+              echo "::warning::Could not read Pages deployment status (attempt ${attempt}/120)."
+              sleep 5
+              continue
+            fi
+
+            case "$status" in
+              succeed)
+                echo "Pages deployment succeeded after the action timeout."
+                exit 0
+                ;;
+              deployment_failed|deployment_perms_error|deployment_content_failed|deployment_lost)
+                echo "::error::Pages deployment ended with status: $status"
+                exit 1
+                ;;
+              *)
+                echo "Pages deployment status: $status (attempt ${attempt}/120)"
+                sleep 5
+                ;;
+            esac
+          done
+
+          echo "::error::Pages deployment did not succeed within 10 additional minutes."
+          exit 1

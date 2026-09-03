@@ -1,0 +1,104 @@
+name: Sync Upstream Skills Repos
+
+on:
+  schedule:
+    # Runs every Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    # Allow manual trigger from the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      GIT_AUTHOR_NAME: "github-actions[bot]"
+      GIT_AUTHOR_EMAIL: "github-actions[bot]@users.noreply.github.com"
+      GIT_COMMITTER_NAME: "github-actions[bot]"
+      GIT_COMMITTER_EMAIL: "github-actions[bot]@users.noreply.github.com"
+
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Sync all upstream repos
+        run: |
+          set -euo pipefail
+
+          # ── Manifest: local_dir|upstream_url ──
+          declare -a REPOS=(
+            "anthropic-financial-services|https://github.com/anthropics/financial-services.git"
+            "microsoft-cat-agent-skills|https://github.com/microsoft/cat-agent-skills.git"
+            "microsoft-copilot-prompts|https://github.com/pnp/copilot-prompts.git"
+            "openclaw-clawhub|https://github.com/openclaw/clawhub.git"
+            "openclaw-agent-skills|https://github.com/openclaw/agent-skills.git"
+            "awesome-openclaw-skills|https://github.com/VoltAgent/awesome-openclaw-skills.git"
+            "awesome-claws|https://github.com/LHL3341/awesome-claws.git"
+            "superpowers|https://github.com/obra/superpowers.git"
+            "karpathy-guidelines|https://github.com/multica-ai/andrej-karpathy-skills.git"
+            "skills-sh|https://github.com/vercel-labs/skills.git"
+          )
+
+          CHANGES=0
+
+          for entry in "${REPOS[@]}"; do
+            IFS='|' read -r dir url <<< "$entry"
+            echo ""
+            echo "━━━ Syncing: $dir ━━━"
+            echo "    From: $url"
+
+            # Clone upstream into a temp dir
+            TMPDIR=$(mktemp -d)
+            if ! git clone --depth 1 "$url" "$TMPDIR/upstream" 2>/dev/null; then
+              echo "    ⚠ Clone failed — skipping"
+              rm -rf "$TMPDIR"
+              continue
+            fi
+
+            # Remove upstream's .git
+            rm -rf "$TMPDIR/upstream/.git"
+
+            # Remove current contents (preserving nothing)
+            rm -rf "$dir"
+
+            # Move upstream contents in
+            mv "$TMPDIR/upstream" "$dir"
+            rm -rf "$TMPDIR"
+
+            # Check if anything changed
+            if git diff --quiet -- "$dir" && [ -z "$(git ls-files --others --exclude-standard -- "$dir")" ]; then
+              echo "    ✓ Already up to date"
+            else
+              echo "    ★ Changes detected"
+              git add "$dir"
+              CHANGES=$((CHANGES + 1))
+            fi
+          done
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Repos with changes: $CHANGES"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          # Commit if anything changed
+          if [ "$CHANGES" -gt 0 ]; then
+            TIMESTAMP=$(date -u +"%Y-%m-%d")
+            git commit -m "chore: sync upstream repos ($TIMESTAMP)
+
+          Auto-synced $CHANGES repo(s) from upstream sources.
+          Triggered by: ${{ github.event_name }}"
+            echo "SHOULD_PUSH=true" >> "$GITHUB_ENV"
+          else
+            echo "No changes to commit."
+            echo "SHOULD_PUSH=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Push changes
+        if: env.SHOULD_PUSH == 'true'
+        run: git push

@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+._*
+
+# Editor
+*.swp
+*.swo
+*~
+
+# Node (skills-sh has node_modules)
+node_modules/

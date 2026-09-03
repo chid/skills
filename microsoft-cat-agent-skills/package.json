@@ -1,0 +1,36 @@
+{
+  "name": "cat-agent-skills",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A gallery of skills for Cowork, Copilot Studio, and Scout AI agents.",
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "validate:skills": "tsx scripts/validate-skill.ts src/content/skills/*.md",
+    "import:submissions": "tsx scripts/import-submissions.ts",
+    "check:submissions": "tsx scripts/import-submissions.ts --check",
+    "test": "node --import tsx --test scripts/*.test.ts",
+    "ratings:fetch": "tsx scripts/fetch-ratings.ts"
+  },
+  "dependencies": {
+    "astro": "^7.1.0"
+  },
+  "devDependencies": {
+    "@fontsource/dm-sans": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@resvg/resvg-js": "^2.6.2",
+    "@tailwindcss/typography": "^0.5.16",
+    "@tailwindcss/vite": "^4.1.4",
+    "@types/adm-zip": "^0.5.8",
+    "adm-zip": "^0.6.0",
+    "croner": "^9.1.0",
+    "gray-matter": "^4.0.3",
+    "satori": "^0.26.0",
+    "tailwindcss": "^4.1.4",
+    "tsx": "^4.22.4"
+  }
+}

@@ -138,6 +138,8 @@ You can also update locally:
 
 ## 🤖 Prompt for AI Agents to Update & Curate Skills
 
+Detailed operational guidelines, tool references, and curation instructions are defined in [AGENTS.md](AGENTS.md).
+
 Copy and paste this prompt into any AI coding assistant (Antigravity, Claude Code, Cursor, Copilot) to audit, update, and discover new skills:
 
 ```text

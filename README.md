@@ -133,3 +133,26 @@ You can also update locally:
 | Disciplined TDD dev workflow | `superpowers/` |
 | Simple behavioral guard-rails | `karpathy-guidelines/` |
 | Installing skills from any GitHub repo | `skills-sh/` (use `npx skills add`) |
+
+---
+
+## 🤖 Prompt for AI Agents to Update & Curate Skills
+
+Copy and paste this prompt into any AI coding assistant (Antigravity, Claude Code, Cursor, Copilot) to audit, update, and discover new skills:
+
+```text
+You are an AI Agent Skills Curator. In this workspace:
+1. Run `./update-all.sh` (or trigger the GitHub Actions workflow) to fetch the latest upstream changes across all repositories.
+2. Inspect `git status` and `git diff --stat` to detect new skills, templates, or workflows added to:
+   - Anthropic Financial Services (Pitch, KYC, Close, DCF)
+   - Microsoft CAT Agent Skills & Copilot Prompts
+   - OpenClaw ClawHub, Canonical Skills & Awesome Lists
+   - Superpowers Framework (TDD & subagent execution)
+   - Karpathy Guidelines
+   - Skills.sh (Vercel)
+3. For any noteworthy changes or new additions:
+   - Summarize the top new capabilities, tools, and workflows.
+   - Update README.md with any new highlights, tools, or version updates.
+   - Ensure clean hygiene (remove nested .git, OS metadata, or oversized assets).
+4. Check the latest trending skills on skills.sh and ClawHub. If any new viral or high-utility skills emerged, propose adding them to update-all.sh and .github/workflows/sync-upstream.yml.
+```

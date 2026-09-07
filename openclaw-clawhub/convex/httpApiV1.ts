@@ -7,12 +7,14 @@ import {
 } from "./httpApiV1/catalogFeedV1";
 import { contentRightsV1Handler } from "./httpApiV1/contentRightsV1";
 import { verifyDocsSessionV1Handler } from "./httpApiV1/docsSessionV1";
+import { recoverPackagePublishAttemptV1Handler } from "./httpApiV1/packagePublishRecoveryV1";
 import {
   exportPluginsV1Handler,
   listBundlePluginsV1Handler,
   listCodePluginsV1Handler,
   listPackagesV1Handler,
   listPluginsV1Handler,
+  listPluginCategoriesV1Handler,
   mintPublishTokenV1Handler,
   npmMirrorGetHandler,
   packagesDeleteRouterV1Handler,
@@ -61,6 +63,7 @@ import { whoamiV1Handler } from "./httpApiV1/whoamiV1";
 
 export const listPackagesV1Http = httpAction(listPackagesV1Handler);
 export const listPluginsV1Http = httpAction(listPluginsV1Handler);
+export const listPluginCategoriesV1Http = httpAction(listPluginCategoriesV1Handler);
 export const exportPluginsV1Http = httpAction(exportPluginsV1Handler);
 export const packagesGetRouterV1Http = httpAction(packagesGetRouterV1Handler);
 export const packagesPostRouterV1Http = httpAction(packagesPostRouterV1Handler);
@@ -115,6 +118,7 @@ export const banAppealContextV1Http = httpAction(banAppealContextV1Handler);
 export const __handlers = {
   listPackagesV1Handler,
   listPluginsV1Handler,
+  listPluginCategoriesV1Handler,
   exportPluginsV1Handler,
   packagesGetRouterV1Handler,
   packagesPostRouterV1Handler,
@@ -162,3 +166,5 @@ export const __handlers = {
   promotionsPostRouterV1Handler,
   promotionsFeedV1Handler,
 };
+
+export const recoverPackagePublishAttemptV1Http = httpAction(recoverPackagePublishAttemptV1Handler);

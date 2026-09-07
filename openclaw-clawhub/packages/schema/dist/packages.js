@@ -156,6 +156,26 @@ export const PackageSkillSpectorAnalysisSchema = type({
     error: "string?",
     checkedAt: "number",
 });
+export const PackageAigFindingSchema = type({
+    ruleId: "string",
+    level: "string",
+    message: "string",
+    title: "string?",
+    description: "string?",
+    file: "string?",
+    startLine: "number?",
+    endLine: "number?",
+    remediation: "string?",
+});
+export const PackageAigAnalysisSchema = type({
+    status: "string",
+    issueCount: "number",
+    findings: PackageAigFindingSchema.array(),
+    scannerVersion: "string?",
+    summary: "string?",
+    error: "string?",
+    checkedAt: "number",
+});
 export const PackageLlmAnalysisDimensionSchema = type({
     name: "string",
     label: "string",
@@ -205,7 +225,11 @@ export const PackageTrustedPublisherSchema = type({
     workflowFilename: "string",
     environment: "string?",
 });
-export const MAX_PACKAGE_MULTIPART_BYTES = 18 * 1024 * 1024;
+// The public registry API is served through Vercel functions, which reject request
+// bodies over 4.5 MB before ClawHub code runs. Inline multipart publishes stay under
+// that cap; larger ClawPacks stage through the upload-url flow straight into storage.
+const MAX_PACKAGE_MULTIPART_MB = 4;
+export const MAX_PACKAGE_MULTIPART_BYTES = MAX_PACKAGE_MULTIPART_MB * 1024 * 1024;
 export const MAX_PACKAGE_CLAWPACK_BYTES = 120 * 1024 * 1024;
 const PACKAGE_MULTIPART_FIXED_OVERHEAD_BYTES = 4096;
 const PACKAGE_MULTIPART_PART_OVERHEAD_BYTES = 1024;
@@ -218,7 +242,7 @@ export function isPackageMultipartUploadTooLarge(input) {
     return estimatePackageMultipartUploadBytes(input) > MAX_PACKAGE_MULTIPART_BYTES;
 }
 export function getPackageMultipartSizeError() {
-    return "Package upload exceeds 18MB multipart upload limit";
+    return `Package upload exceeds ${MAX_PACKAGE_MULTIPART_MB}MB multipart upload limit`;
 }
 function estimateMultipartStringPartBytes(fieldName, value) {
     return PACKAGE_MULTIPART_PART_OVERHEAD_BYTES + utf8ByteLength(fieldName) + utf8ByteLength(value);
@@ -404,6 +428,7 @@ export const ApiV1PackageVersionResponseSchema = type({
         sha256hash: "string|null?",
         vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
         skillSpectorAnalysis: PackageSkillSpectorAnalysisSchema.or("null").optional(),
+        aigAnalysis: PackageAigAnalysisSchema.or("null").optional(),
         llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),
         staticScan: PackageStaticScanSchema.or("null").optional(),
     }).or("null"),

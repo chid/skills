@@ -493,7 +493,7 @@ export function AbusePage({
               <tbody>
                 {!loaded ? (
                   <PublisherAbuseTableSkeletonRows
-                    columns={5}
+                    columnWidths={[72, 148, 64, 124, 92]}
                     label="Loading publisher abuse nominations"
                   />
                 ) : items.length === 0 ? (
@@ -848,11 +848,11 @@ function formatAbuseTabCountLabel(count: number, hasMore: boolean | undefined) {
 }
 
 function PublisherAbuseTableSkeletonRows({
-  columns,
+  columnWidths,
   label,
   rows = 5,
 }: {
-  columns: number;
+  columnWidths: readonly number[];
   label: string;
   rows?: number;
 }) {
@@ -864,7 +864,7 @@ function PublisherAbuseTableSkeletonRows({
           className="pa-skeleton-row"
           aria-hidden={rowIndex === 0 ? undefined : true}
         >
-          {Array.from({ length: columns }, (_column, columnIndex) => (
+          {columnWidths.map((baseWidth, columnIndex) => (
             <td key={columnIndex}>
               {rowIndex === 0 && columnIndex === 0 ? (
                 <span className="sr-only" role="status" aria-label={label}>
@@ -874,7 +874,7 @@ function PublisherAbuseTableSkeletonRows({
               <span
                 className="pa-table-skeleton-bar"
                 style={{
-                  width: publisherAbuseSkeletonWidth(columnIndex, rowIndex),
+                  width: publisherAbuseSkeletonWidth(baseWidth, rowIndex),
                 }}
               />
             </td>
@@ -885,10 +885,8 @@ function PublisherAbuseTableSkeletonRows({
   );
 }
 
-function publisherAbuseSkeletonWidth(columnIndex: number, rowIndex: number) {
-  const widths = [72, 148, 64, 124, 92, 84, 92, 100, 100];
-  const base = widths[columnIndex] ?? 96;
-  return Math.max(48, base - (rowIndex % 3) * 14);
+function publisherAbuseSkeletonWidth(baseWidth: number, rowIndex: number) {
+  return Math.max(48, baseWidth - (rowIndex % 3) * 14);
 }
 
 function PublisherAbuseSignalsTable({
@@ -912,7 +910,6 @@ function PublisherAbuseSignalsTable({
       <table className="pa-table pa-signals-table">
         <thead>
           <tr>
-            <th>Severity</th>
             <th>Signal</th>
             <th>Subject</th>
             <th className="pa-num">Evidence</th>
@@ -921,10 +918,13 @@ function PublisherAbuseSignalsTable({
         </thead>
         <tbody>
           {!loaded ? (
-            <PublisherAbuseTableSkeletonRows columns={5} label="Loading publisher abuse signals" />
+            <PublisherAbuseTableSkeletonRows
+              columnWidths={[148, 148, 64, 92]}
+              label="Loading publisher abuse signals"
+            />
           ) : items.length === 0 ? (
             <tr className="pa-empty-row">
-              <td colSpan={5}>
+              <td colSpan={4}>
                 <strong>{emptyState.title}</strong>
                 {emptyState.body}
               </td>
@@ -940,14 +940,6 @@ function PublisherAbuseSignalsTable({
                   className={selected ? "is-selected" : undefined}
                   onClick={() => onSelectSignal(item)}
                 >
-                  <td>
-                    <Badge
-                      variant={publisherAbuseSignalSeverityVariant(item.signal.signalType)}
-                      size="sm"
-                    >
-                      {formatPublisherAbuseSignalSeverity(item.signal.signalType)}
-                    </Badge>
-                  </td>
                   <td>
                     <button
                       type="button"
@@ -1022,9 +1014,6 @@ function PublisherAbuseSignalInspector({ item }: { item: PublisherAbuseSignalEnt
           Publisher abuse signal evidence with links to the skill and publisher.
         </SheetDescription>
         <div className="pa-pills">
-          <Badge variant={publisherAbuseSignalSeverityVariant(item.signal.signalType)} size="sm">
-            {formatPublisherAbuseSignalSeverity(item.signal.signalType)}
-          </Badge>
           <Badge variant="compact">Seen {formatWholeNumber(item.signal.seenCount)} times</Badge>
         </div>
         <div className="pa-idline">
@@ -1691,18 +1680,6 @@ function describePublisherAbuseSignalType(signalType: string) {
     return "Several already-anomalous skills under this publisher have nearly identical download trends and similarly sized peaks.";
   }
   return "Stored publisher traffic anomaly visible to staff.";
-}
-
-function formatPublisherAbuseSignalSeverity(signalType: string) {
-  if (signalType === "high_install_download_ratio") return "High";
-  return "Watch";
-}
-
-function publisherAbuseSignalSeverityVariant(
-  signalType: string,
-): NonNullable<BadgeProps["variant"]> {
-  if (signalType === "high_install_download_ratio") return "warning";
-  return "review";
 }
 
 function formatPublisherAbuseStatus(status: string) {

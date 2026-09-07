@@ -11,6 +11,8 @@ import {
   resolveCodexWorkerHome,
 } from "../codex-worker-guard";
 import {
+  assertAigFilePathsHaveNoCompiledPython,
+  normalizeAigAnalysis,
   normalizeSkillSpectorAnalysis,
   publishWorkerHealthSummary,
   processJob,
@@ -367,6 +369,127 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(analysis.issues).toHaveLength(25);
     expect(analysis.issues[0]?.codeSnippet).toContain("...[truncated ");
     expect(analysis.issues[0]?.codeSnippet?.length).toBeLessThan(longSnippet.length);
+  });
+
+  it("normalizes A.I.G SARIF findings and scanner metadata", () => {
+    const analysis = normalizeAigAnalysis(
+      JSON.stringify({
+        version: "2.1.0",
+        runs: [
+          {
+            tool: {
+              driver: {
+                name: "aig-skill-scan",
+                version: "0.2.1",
+                rules: [{ id: "T04", name: "Embedded Malicious Code" }],
+              },
+            },
+            results: [
+              {
+                ruleId: "T04",
+                level: "error",
+                message: { text: "Embedded payload executes a downloaded script." },
+                locations: [
+                  {
+                    physicalLocation: {
+                      artifactLocation: { uri: "SKILL.md" },
+                      region: { startLine: 12, endLine: 14 },
+                    },
+                  },
+                ],
+                properties: {
+                  description: "The payload bypasses review by downloading code at runtime.",
+                  severity: "High",
+                },
+                fixes: [{ description: { text: "Remove the downloaded payload." } }],
+              },
+            ],
+          },
+        ],
+      }),
+      123,
+    );
+
+    expect(analysis).toEqual({
+      checkedAt: 123,
+      findings: [
+        {
+          description: "The payload bypasses review by downloading code at runtime.",
+          endLine: 14,
+          file: "SKILL.md",
+          level: "error",
+          message:
+            "Embedded payload executes a downloaded script. The payload bypasses review by downloading code at runtime.",
+          remediation: "Remove the downloaded payload.",
+          ruleId: "T04",
+          startLine: 12,
+          title: "Embedded payload executes a downloaded script.",
+        },
+      ],
+      issueCount: 1,
+      scannerVersion: "0.2.1",
+      status: "suspicious",
+      summary: "A.I.G reported 1 finding.",
+    });
+  });
+
+  it("rejects A.I.G SARIF without an actual run", () => {
+    expect(normalizeAigAnalysis(JSON.stringify({ version: "2.1.0", runs: [] }), 123)).toEqual({
+      checkedAt: 123,
+      error: "A.I.G SARIF output did not contain a run.",
+      findings: [],
+      issueCount: 0,
+      status: "error",
+    });
+  });
+
+  it("rejects malformed A.I.G SARIF runs instead of treating them as clean", () => {
+    expect(normalizeAigAnalysis(JSON.stringify({ version: "2.1.0", runs: [{}] }), 123)).toEqual({
+      checkedAt: 123,
+      error: "A.I.G SARIF output did not contain a valid aig-skill-scan run.",
+      findings: [],
+      issueCount: 0,
+      status: "error",
+    });
+  });
+
+  it("ignores unrelated SARIF runs when a valid A.I.G run is present", () => {
+    const analysis = normalizeAigAnalysis(
+      JSON.stringify({
+        version: "2.1.0",
+        runs: [
+          {
+            tool: { driver: { name: "metadata-generator", version: "1.0.0" } },
+            results: [],
+          },
+          {
+            tool: { driver: { name: "aig-skill-scan", version: "0.2.1" } },
+            results: [],
+          },
+        ],
+      }),
+      123,
+    );
+
+    expect(analysis).toMatchObject({
+      checkedAt: 123,
+      issueCount: 0,
+      scannerVersion: "0.2.1",
+      status: "clean",
+    });
+  });
+
+  it.each(["pyc", "pyo", "pyd", "PYC"])(
+    "rejects packaged Python .%s files before invoking A.I.G 0.2.1",
+    (extension) => {
+      expect(() =>
+        assertAigFilePathsHaveNoCompiledPython([`scripts/__pycache__/payload.${extension}`]),
+      ).toThrow("CVE-2026-84809");
+    },
+  );
+
+  it("allows source-only Python targets through the A.I.G bytecode guard", () => {
+    expect(() => assertAigFilePathsHaveNoCompiledPython(["scanner.py"])).not.toThrow();
   });
 
   it("writes scanner metadata without lease tokens or signed file URLs", async () => {

@@ -23,6 +23,7 @@ import {
   listCodePluginsV1Http,
   listPackagesV1Http,
   listPluginsV1Http,
+  listPluginCategoriesV1Http,
   listSkillsV1Http,
   trendingV1Http,
   mintPublishTokenV1Http,
@@ -34,6 +35,7 @@ import {
   createPublisherV1Http,
   publishPackageV1Http,
   publishAttemptsGetRouterV1Http,
+  recoverPackagePublishAttemptV1Http,
   publishSkillV1Http,
   resolveSkillVersionV1Http,
   searchSkillsV1Http,
@@ -152,6 +154,12 @@ http.route({
   path: ApiRoutes.plugins,
   method: "GET",
   handler: listPluginsV1Http,
+});
+
+http.route({
+  path: ApiRoutes.pluginCategories,
+  method: "GET",
+  handler: listPluginCategoriesV1Http,
 });
 
 http.route({
@@ -284,6 +292,12 @@ http.route({
   pathPrefix: "/api/v1/publish/attempts/",
   method: "GET",
   handler: publishAttemptsGetRouterV1Http,
+});
+
+http.route({
+  pathPrefix: "/api/v1/publish/attempts/",
+  method: "POST",
+  handler: recoverPackagePublishAttemptV1Http,
 });
 
 http.route({

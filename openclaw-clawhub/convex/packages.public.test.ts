@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { type FunctionReference, getFunctionName } from "convex/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "./lib/clawpack";
 import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
@@ -77,6 +78,7 @@ import {
   searchForViewerInternal,
   searchPublic,
 } from "./packages";
+import { runStaticPublishScanInternal } from "./staticPublishScanNode";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -505,6 +507,47 @@ function makePackageManifestStorage() {
     ),
     store: vi.fn(async () => "storage:legacy-zip"),
   };
+}
+
+type PublishScanStorage = { storage: { get: (storageId: string) => Promise<Blob | null> } };
+
+// Convex rejects action arguments whose object keys start with `$` (package.json
+// `$schema` is the production case); mirror that rule so the mock fails the way
+// the real boundary would.
+function assertConvexValueKeys(value: unknown, path = "args"): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertConvexValueKeys(item, `${path}[${index}]`));
+    return;
+  }
+  if (value && typeof value === "object") {
+    for (const [key, nested] of Object.entries(value)) {
+      if (key.startsWith("$")) {
+        throw new Error(`Field name ${key} at ${path} starts with a '$', which is reserved.`);
+      }
+      assertConvexValueKeys(nested, `${path}.${key}`);
+    }
+  }
+}
+
+type StaticScanHandler = (ctx: unknown, args: unknown) => Promise<unknown>;
+
+// Publish actions hop to the Node runtime for the moderation scan; run the real
+// action handler against the calling ctx's storage (`ctx.runAction(...)` binds
+// `this`) so scan verdicts stay observable, and answer every other action (the
+// package inspector) with the supplied result.
+function makePublishRunActionMock(
+  inspectorResult: () => unknown = makeCleanPackageInspectorResult,
+) {
+  return vi.fn(async function (this: PublishScanStorage, ref: unknown, args: unknown) {
+    const name = getFunctionName(ref as FunctionReference<"action">);
+    if (name === "staticPublishScanNode:runStaticPublishScanInternal") {
+      assertConvexValueKeys(args);
+      const handler = (runStaticPublishScanInternal as unknown as { _handler: StaticScanHandler })
+        ._handler;
+      return await handler(this, args);
+    }
+    return inspectorResult();
+  });
 }
 
 function makeCleanPackageInspectorResult() {
@@ -9978,7 +10021,7 @@ describe("packages public queries", () => {
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
         }),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -10950,6 +10993,7 @@ describe("packages public queries", () => {
         }),
         store: vi.fn(async () => "storage:legacy-zip"),
       },
+      runAction: makePublishRunActionMock(),
     };
 
     try {
@@ -11123,6 +11167,7 @@ describe("packages public queries", () => {
         }),
         store: vi.fn(async () => "storage:legacy-zip"),
       },
+      runAction: makePublishRunActionMock(),
     };
 
     try {
@@ -11418,7 +11463,7 @@ describe("packages public queries", () => {
         })
         .mockResolvedValueOnce(null),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(async () => {}),
       },
@@ -11720,7 +11765,7 @@ describe("packages public queries", () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -11852,7 +11897,7 @@ describe("packages public queries", () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -11949,7 +11994,7 @@ describe("packages public queries", () => {
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(null),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -12078,7 +12123,7 @@ describe("packages public queries", () => {
         .mockResolvedValueOnce(orphanRelease)
         .mockResolvedValueOnce(null),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -12187,7 +12232,7 @@ describe("packages public queries", () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -12275,7 +12320,7 @@ describe("packages public queries", () => {
           }),
         ),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -12355,7 +12400,7 @@ describe("packages public queries", () => {
           status: "blocked",
         }),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -12440,7 +12485,7 @@ describe("packages public queries", () => {
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(null),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -12519,7 +12564,7 @@ describe("packages public queries", () => {
         })
         .mockResolvedValueOnce(null),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -12675,7 +12720,7 @@ describe("packages public queries", () => {
           linkedUserId: "users:owner",
         }),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -12795,7 +12840,7 @@ describe("packages public queries", () => {
             linkedUserId: "users:owner",
           }),
         runMutation,
-        runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+        runAction: makePublishRunActionMock(),
         scheduler: {
           runAfter: vi.fn(),
         },
@@ -12883,6 +12928,7 @@ describe("packages public queries", () => {
       [
         "storage:package",
         JSON.stringify({
+          $schema: "https://json.schemastore.org/package.json",
           name: "demo-plugin",
           keywords: [
             "one",
@@ -12945,7 +12991,7 @@ describe("packages public queries", () => {
         }),
         store: vi.fn(async () => "storage:legacy-zip"),
       },
-      runAction: vi.fn(async () => ({
+      runAction: makePublishRunActionMock(() => ({
         status: "pass",
         summary: {
           breakageCount: 0,
@@ -15502,7 +15548,7 @@ describe("packages public queries", () => {
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
         }),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -15558,7 +15604,7 @@ describe("packages public queries", () => {
           linkedUserId: "users:vincent",
         }),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -15619,7 +15665,7 @@ describe("packages public queries", () => {
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
         }),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -15669,7 +15715,7 @@ describe("packages public queries", () => {
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
         }),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -15714,7 +15760,7 @@ describe("packages public queries", () => {
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
         }),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -15760,7 +15806,7 @@ describe("packages public queries", () => {
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
         }),
       runMutation,
-      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      runAction: makePublishRunActionMock(),
       scheduler: {
         runAfter: vi.fn(),
       },

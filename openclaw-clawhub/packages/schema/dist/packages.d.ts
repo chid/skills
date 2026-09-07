@@ -178,6 +178,38 @@ export declare const PackageSkillSpectorAnalysisSchema: import("arktype/internal
     checkedAt: number;
 }, {}>;
 export type PackageSkillSpectorAnalysis = (typeof PackageSkillSpectorAnalysisSchema)[inferred];
+export declare const PackageAigFindingSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ruleId: string;
+    level: string;
+    message: string;
+    title?: string | undefined;
+    description?: string | undefined;
+    file?: string | undefined;
+    startLine?: number | undefined;
+    endLine?: number | undefined;
+    remediation?: string | undefined;
+}, {}>;
+export type PackageAigFinding = (typeof PackageAigFindingSchema)[inferred];
+export declare const PackageAigAnalysisSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: string;
+    issueCount: number;
+    findings: {
+        ruleId: string;
+        level: string;
+        message: string;
+        title?: string | undefined;
+        description?: string | undefined;
+        file?: string | undefined;
+        startLine?: number | undefined;
+        endLine?: number | undefined;
+        remediation?: string | undefined;
+    }[];
+    scannerVersion?: string | undefined;
+    summary?: string | undefined;
+    error?: string | undefined;
+    checkedAt: number;
+}, {}>;
+export type PackageAigAnalysis = (typeof PackageAigAnalysisSchema)[inferred];
 export declare const PackageLlmAnalysisDimensionSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     name: string;
     label: string;
@@ -711,6 +743,25 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
                 remediation?: string | undefined;
                 finding?: string | undefined;
                 codeSnippet?: string | undefined;
+            }[];
+            scannerVersion?: string | undefined;
+            summary?: string | undefined;
+            error?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
+        aigAnalysis?: {
+            status: string;
+            issueCount: number;
+            findings: {
+                ruleId: string;
+                level: string;
+                message: string;
+                title?: string | undefined;
+                description?: string | undefined;
+                file?: string | undefined;
+                startLine?: number | undefined;
+                endLine?: number | undefined;
+                remediation?: string | undefined;
             }[];
             scannerVersion?: string | undefined;
             summary?: string | undefined;

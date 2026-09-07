@@ -293,6 +293,17 @@ const completeCodexScanJobHandler = (
         verdict?: string;
         checkedAt: number;
       };
+      aigAnalysis?: {
+        status: string;
+        issueCount: number;
+        findings: Array<{
+          ruleId: string;
+          level: string;
+          message: string;
+        }>;
+        scannerVersion?: string;
+        checkedAt: number;
+      };
       skillSpectorAnalysis?: {
         status: string;
         issueCount: number;
@@ -310,6 +321,14 @@ const completeCodexScanJobHandler = (
     { ok: true }
   >
 )._handler;
+
+const cleanAigAnalysis = {
+  status: "clean",
+  issueCount: 0,
+  findings: [],
+  scannerVersion: "0.2.1",
+  checkedAt: 123,
+};
 
 const prepareGitHubSkillScanRequestInternalHandler = (
   prepareGitHubSkillScanRequestInternal as unknown as WrappedHandler<
@@ -5211,6 +5230,70 @@ describe("securityScan", () => {
     });
   });
 
+  it.each(["skillVersion", "skillScanRequest"] as const)(
+    "rejects legacy %s completions that omit required A.I.G evidence",
+    async (targetKind) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+      const runQuery = vi.fn(async () => ({
+        job: {
+          _id: "securityScanJobs:legacy",
+          targetKind,
+          leaseToken: "lease-token",
+        },
+      }));
+      const runMutation = vi.fn(async () => ({ ok: true }));
+
+      await expect(
+        completeCodexScanJobHandler(
+          { runMutation, runQuery },
+          {
+            token: "worker-secret",
+            jobId: "securityScanJobs:legacy",
+            leaseToken: "lease-token",
+            llmAnalysis: { status: "clean", checkedAt: 123 },
+          },
+        ),
+      ).rejects.toThrow("A.I.G analysis is required to complete skill scans");
+
+      expect(runMutation).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["skillVersion", "skillScanRequest"] as const)(
+    "rejects unsuccessful A.I.G evidence for %s completions",
+    async (targetKind) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+      const runQuery = vi.fn(async () => ({
+        job: {
+          _id: "securityScanJobs:failed-aig",
+          targetKind,
+          leaseToken: "lease-token",
+        },
+      }));
+      const runMutation = vi.fn(async () => ({ ok: true }));
+
+      await expect(
+        completeCodexScanJobHandler(
+          { runMutation, runQuery },
+          {
+            token: "worker-secret",
+            jobId: "securityScanJobs:failed-aig",
+            leaseToken: "lease-token",
+            llmAnalysis: { status: "clean", checkedAt: 123 },
+            aigAnalysis: {
+              status: "error",
+              issueCount: 0,
+              findings: [],
+              checkedAt: 123,
+            },
+          },
+        ),
+      ).rejects.toThrow("A.I.G analysis is required to complete skill scans");
+
+      expect(runMutation).not.toHaveBeenCalled();
+    },
+  );
+
   it("caps SkillSpector findings before storing completed scan results", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
     const longSnippet = "sensitive SkillSpector artifact text ".repeat(200);
@@ -5238,6 +5321,7 @@ describe("securityScan", () => {
           status: "suspicious",
           checkedAt: 123,
         },
+        aigAnalysis: cleanAigAnalysis,
         skillSpectorAnalysis: {
           status: "suspicious",
           issueCount: 30,
@@ -5296,6 +5380,7 @@ describe("securityScan", () => {
           jobId: "securityScanJobs:catalog",
           leaseToken: "placeholder",
           llmAnalysis: { status: "clean", checkedAt: 123 },
+          aigAnalysis: cleanAigAnalysis,
         },
       ),
     ).rejects.toThrow("catalog result unavailable");
@@ -5336,6 +5421,7 @@ describe("securityScan", () => {
         leaseToken: "lease-token",
         runId: "clawscan-run",
         llmAnalysis: { status: "clean", checkedAt: 123 },
+        aigAnalysis: cleanAigAnalysis,
       },
     );
 
@@ -5386,6 +5472,7 @@ describe("securityScan", () => {
           leaseToken: "lease-token",
           runId: "clawscan-run",
           llmAnalysis: { status: "clean", checkedAt: 123 },
+          aigAnalysis: cleanAigAnalysis,
         },
       ),
     ).resolves.toEqual({ ok: true, applied: true });
@@ -5422,6 +5509,7 @@ describe("securityScan", () => {
           leaseToken: "expired-lease-token",
           runId: "clawscan-run",
           llmAnalysis: { status: "clean", checkedAt: 123 },
+          aigAnalysis: cleanAigAnalysis,
         },
       ),
     ).resolves.toEqual({ ok: true, applied: true, publicVisible: false });
@@ -5429,7 +5517,7 @@ describe("securityScan", () => {
     expect(runMutation).toHaveBeenCalledTimes(2);
   });
 
-  it("clears legacy plugin SkillSpector results when no new analysis is produced", async () => {
+  it("ignores package AIG payloads because plugin scanning is out of scope", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
     const runQuery = vi.fn(async () => ({
       job: {
@@ -5450,16 +5538,22 @@ describe("securityScan", () => {
         jobId: "securityScanJobs:plugin",
         leaseToken: "lease-token",
         llmAnalysis: { status: "clean", checkedAt: 123 },
+        aigAnalysis: {
+          status: "error",
+          issueCount: 99,
+          findings: [],
+          checkedAt: Number.POSITIVE_INFINITY,
+        },
       },
     );
 
-    expect(runMutation).toHaveBeenNthCalledWith(
-      1,
-      expect.anything(),
-      expect.objectContaining({ releaseId: "packageReleases:plugin" }),
-    );
-    const scanPatch = runMutation.mock.calls[0]?.[1] as Record<string, unknown>;
-    expect(scanPatch).not.toHaveProperty("skillSpectorAnalysis");
+    expect(runMutation).toHaveBeenCalledTimes(4);
+    const releasePatches = runMutation.mock.calls
+      .map(([, mutationArgs]) => mutationArgs as Record<string, unknown>)
+      .filter((mutationArgs) => mutationArgs.releaseId === "packageReleases:plugin");
+    expect(releasePatches).toHaveLength(2);
+    expect(releasePatches).not.toContainEqual(expect.objectContaining({ aigAnalysis: undefined }));
+    expect(releasePatches.some((patch) => "aigAnalysis" in patch)).toBe(false);
   });
 
   it("persists an error ClawScan result when worker retries are exhausted", async () => {
@@ -5542,12 +5636,21 @@ describe("securityScan", () => {
         jobId: "securityScanJobs:1",
         leaseToken: "lease-token",
         llmAnalysis: { status: "clean", checkedAt: 123 },
+        aigAnalysis: cleanAigAnalysis,
       },
     );
 
-    expect(runMutation).toHaveBeenCalledTimes(3);
+    expect(runMutation).toHaveBeenCalledTimes(4);
     expect(runMutation).toHaveBeenNthCalledWith(
       1,
+      expect.anything(),
+      expect.objectContaining({
+        versionId: "skillVersions:1",
+        aigAnalysis: cleanAigAnalysis,
+      }),
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
       expect.anything(),
       expect.objectContaining({
         versionId: "skillVersions:1",
@@ -5555,14 +5658,14 @@ describe("securityScan", () => {
       }),
     );
     expect(runMutation).toHaveBeenNthCalledWith(
-      2,
+      3,
       expect.anything(),
       expect.objectContaining({
         jobId: "securityScanJobs:1",
         leaseToken: "lease-token",
       }),
     );
-    expect(runMutation).toHaveBeenNthCalledWith(3, expect.anything(), {});
+    expect(runMutation).toHaveBeenNthCalledWith(4, expect.anything(), {});
   });
 
   it.each([
@@ -6235,6 +6338,7 @@ describe("securityScan", () => {
         jobId: "securityScanJobs:1",
         leaseToken: "lease-token",
         llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 123 },
+        aigAnalysis: cleanAigAnalysis,
         skillSpectorAnalysis: {
           status: "clean",
           issueCount: 0,

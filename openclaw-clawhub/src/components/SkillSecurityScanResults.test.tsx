@@ -10,6 +10,7 @@ import { SecurityAuditPage } from "./SecurityAuditPage";
 import {
   getSkillSpectorIssueCount,
   SecurityScanResults,
+  type AigAnalysis,
   type LlmAnalysis,
   type SkillSpectorAnalysis,
   type VtAnalysis,
@@ -162,6 +163,27 @@ const skillSpectorAnalysis: SkillSpectorAnalysis = {
         "The manifest advertises a generic security benchmark skill, but the body defines an unrelated Magic 8-Ball skill that executes shell commands.",
       remediation:
         "Make the manifest and body accurately describe the same skill, and reject deceptive metadata.",
+    },
+  ],
+};
+
+const aigAnalysis: AigAnalysis = {
+  status: "malicious",
+  issueCount: 1,
+  scannerVersion: "0.2.1",
+  summary: "A.I.G reported 1 finding from SkillTrustBench rule T04.",
+  checkedAt: Date.now(),
+  findings: [
+    {
+      ruleId: "T04",
+      level: "error",
+      message: "The skill instructs the agent to transmit local session data externally.",
+      title: "Session data exfiltration",
+      description: "The skill transmits local session data to an unrelated external endpoint.",
+      file: "SKILL.md",
+      startLine: 17,
+      endLine: 18,
+      remediation: "Remove the session-file upload instruction.",
     },
   ],
 };
@@ -489,6 +511,12 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByRole("heading", { name: "SkillSpector" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "SkillSpector" }).getAttribute("href")).toBe(
+      "https://github.com/NVIDIA/SkillSpector",
+    );
+    expect(screen.getByRole("link", { name: "SkillSpector" }).getAttribute("target")).toBe(
+      "_blank",
+    );
     expect(screen.getByText("By NVIDIA")).toBeTruthy();
     expect(screen.queryByText("SkillSpector found 1 issue.")).toBeNull();
     expect(screen.getByRole("heading", { name: "Description-Behavior Mismatch" })).toBeTruthy();
@@ -518,6 +546,85 @@ describe("SecurityScanResults static guidance", () => {
         node.textContent?.trim(),
       ),
     ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
+  });
+
+  it("renders A.I.G coverage and concise findings with Tencent attribution", () => {
+    const { container } = render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "A.I.G Demo",
+          name: "aig-demo",
+          version: "1.0.0",
+          detailPath: "/local/aig-demo",
+        }}
+        aigAnalysis={aigAnalysis}
+        llmAnalysis={clawScanAnalysis}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "A.I.G" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "A.I.G" }).getAttribute("href")).toBe(
+      "https://github.com/Tencent/AI-Infra-Guard/tree/main/skill-scan",
+    );
+    expect(screen.getByRole("link", { name: "A.I.G" }).getAttribute("target")).toBe("_blank");
+    expect(screen.queryByText("Malicious")).toBeNull();
+    expect(screen.getByRole("link", { name: "By Tencent" }).getAttribute("href")).toBe(
+      "https://github.com/Tencent/AI-Infra-Guard",
+    );
+    expect(
+      container
+        .querySelector('a[href="https://github.com/Tencent/AI-Infra-Guard"] img')
+        ?.getAttribute("src"),
+    ).toBe("https://static.www.tencent.com/favicon.ico");
+    expect(screen.getByText("Vulnerability Patterns")).toBeTruthy();
+    expect(screen.queryByText(/A\.I\.G supplies supporting evidence/)).toBeNull();
+    expect(screen.getByText("Findings (1)")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "T04 · Embedded Malicious Code" })).toBeTruthy();
+    expect(screen.getByText("Session data exfiltration")).toBeTruthy();
+    expect(
+      screen.getByText("The skill transmits local session data to an unrelated external endpoint."),
+    ).toBeTruthy();
+    expect(screen.getByText("SKILL.md:17")).toBeTruthy();
+    expect(screen.getByText("Remove the session-file upload instruction.")).toBeTruthy();
+    expect(
+      container.querySelector(".skillspector-check-row .skillspector-check-category")?.textContent,
+    ).toBe("Embedded Malicious Code");
+    expect(container.querySelector(".skillspector-check-row-flagged")).toBeTruthy();
+    expect(
+      Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
+        node.textContent?.trim(),
+      ),
+    ).toEqual(["Overview", "A.I.G", "SkillSpector", "VirusTotal"]);
+  });
+
+  it("renders legacy message-only A.I.G findings once", () => {
+    const message = "The skill instructs the agent to transmit local session data externally.";
+
+    render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "A.I.G Demo",
+          name: "aig-demo",
+          version: "1.0.0",
+          detailPath: "/local/aig-demo",
+        }}
+        aigAnalysis={{
+          ...aigAnalysis,
+          findings: [
+            {
+              ...aigAnalysis.findings[0],
+              message,
+              title: message,
+              description: undefined,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText(message)).toHaveLength(1);
   });
 
   it("loads plugin SkillSpector snippets through the package text-preview contract", async () => {
@@ -1152,6 +1259,7 @@ describe("SecurityScanResults static guidance", () => {
         detailPath: "/local/pattern-guard",
       },
       sha256hash: "a".repeat(64),
+      aigAnalysis,
       llmAnalysis: clawScanAnalysis,
       skillSpectorAnalysis,
       staticScan,
@@ -1162,6 +1270,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(buildSecurityAuditExportEntries(input).map((entry) => entry.path)).toEqual([
       "manifest.json",
       "clawscan.json",
+      "aig.json",
       "skillspector.json",
       "static-analysis.json",
       "virustotal.json",
@@ -1172,6 +1281,7 @@ describe("SecurityScanResults static guidance", () => {
 
     expect(Object.keys(zipEntries).sort()).toEqual([
       "README.md",
+      "aig.json",
       "clawscan.json",
       "manifest.json",
       "skillspector.json",
@@ -1179,11 +1289,13 @@ describe("SecurityScanResults static guidance", () => {
       "virustotal.json",
     ]);
     expect(JSON.parse(decode("manifest.json")).scanners).toEqual({
+      aig: "malicious",
       clawscan: "suspicious",
       skillspector: "suspicious",
       staticAnalysis: "suspicious",
       virustotal: "suspicious",
     });
+    expect(JSON.parse(decode("aig.json")).findings[0].ruleId).toBe("T04");
     expect(JSON.parse(decode("skillspector.json")).issues[0].issueId).toBe("SDI-1");
     expect(JSON.parse(decode("static-analysis.json")).findings[0].code).toBe(
       "static.network_request",

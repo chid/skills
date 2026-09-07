@@ -517,13 +517,11 @@ describe("Management", () => {
     expect(screen.getByRole("tab", { name: /All flagged 2/ })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Resolved 0/ })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "Signal" })).toBeTruthy();
-    expect(screen.getByRole("columnheader", { name: "Severity" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "Subject" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "Evidence" })).toBeTruthy();
     expect(screen.queryByRole("columnheader", { name: "Status" })).toBeNull();
     expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
     expect(screen.getByText("High install/download ratio")).toBeTruthy();
-    expect(screen.getByText("High")).toBeTruthy();
     expect(screen.getByText("Ratio Skill")).toBeTruthy();
     expect(screen.getByText("@ratio-owner / ratio-skill")).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Open skill Ratio Skill" })).toBeNull();
@@ -988,6 +986,29 @@ describe("Management", () => {
       screen.getByRole("status", { name: "Loading publisher abuse nominations" }),
     ).toBeTruthy();
     expect(screen.queryByText("Loading publisher abuse nominations…")).toBeNull();
+  });
+
+  it("uses Signal-first loading placeholders on the Signals tab", () => {
+    searchState = { view: "abuse", tab: "signals" };
+    usePaginatedQueryMock.mockImplementation((query, args) => ({
+      results: [],
+      status:
+        getFunctionName(query) === "publisherAbuse:listSignalsPage" && args !== "skip"
+          ? "LoadingFirstPage"
+          : "Exhausted",
+      loadMore: vi.fn(),
+    }));
+
+    render(<Management />);
+
+    const loadingStatus = screen.getByRole("status", {
+      name: "Loading publisher abuse signals",
+    });
+    const loadingRow = loadingStatus.closest("tr");
+    expect(loadingRow?.querySelectorAll("td")).toHaveLength(4);
+    expect(
+      loadingStatus.parentElement?.querySelector(".pa-table-skeleton-bar")?.getAttribute("style"),
+    ).toBe("width: 148px;");
   });
 
   it("starts a manual publisher abuse scan without exposing force-new", async () => {

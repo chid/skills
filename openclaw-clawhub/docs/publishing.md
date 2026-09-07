@@ -233,6 +233,46 @@ clawhub package trusted-publisher delete @owner/package-name
 Deleting trusted publisher config is the rollback path. It disables future
 trusted publish token minting until a package manager sets config again.
 
+### OpenClaw release recovery
+
+OpenClaw automated releases stay non-public until their exact release-parent
+attempt succeeds. If that parent fails or is cancelled, the publish attempt
+fails permanently. A human recovery dispatch requires protected environment
+approval and a version 2 recovery receipt identifying the original authorized
+child. Recovery must use the same workflow ref and SHA, candidate, tooling, and
+package inventory. That workflow route does not accept cancelled parents.
+
+Already-failed staged plugin attempts can instead be recovered under fresh
+publisher authority, without changing the old workflow or its outcome:
+
+```sh
+clawhub package recover <attempt-id> \
+  --manual-override-reason "Retry the retained release artifacts after workflow failure" \
+  --wait --json
+```
+
+This uses a normal ClawHub user token and current package publish access.
+It creates a successor with the same retained artifacts and version, runs new
+security checks, and preserves the failed attempt and original authorization
+as audit history. Current token or publisher-access revocation still blocks
+publication. It cannot override moderation or revive an active attempt.
+Without `--wait`, the result is explicitly pending. The equivalent HTTP route is
+[`POST /api/v1/publish/attempts/{id}/recover`](http-api.md#post-%2Fapi%2Fv1%2Fpublish%2Fattempts%2F%7Bid%7D%2Frecover).
+
+Operators can preview orphaned package attempts, supplying an exact `version`,
+optional `slugPrefix` or `attemptIds`, and a `reason`:
+
+```sh
+bunx convex run --prod maintenance:discardStalePackagePublishAttemptsInternal \
+  '{"version":"2026.9.1","slugPrefix":"@openclaw/","reason":"Release parent failed after staging"}'
+```
+
+It defaults to a dry run; add `"dryRun":false` to discard each pending release
+and retire its attempt. Signed-in admins can run the same operation as the
+`maintenance:discardStalePackagePublishAttempts` action. The reason appears as
+`error` at `/api/v1/publish/attempts/<id>`, so use publisher-facing wording.
+Published releases and terminal attempts are never discarded by this operation.
+
 ## FAQ
 
 ### Package scope must match selected owner
@@ -255,9 +295,14 @@ wrong publisher, transfer ownership instead:
 clawhub package transfer @opik/opik-openclaw --to opik
 ```
 
-Use package or skill transfer only when you have admin access to both the
-current owner and the destination publisher. Package transfer does not let you
-publish into a scope you cannot manage.
+Package transfers require admin access to both the current owner and the
+destination publisher, unless performed by a platform admin. Use `--to <owner>`
+to select an existing, active destination publisher. Scoped package names can
+transfer only to the publisher matching their scope. See
+[`package transfer`](./cli.md#package-transfer-%3Cname%3E) for details.
+
+Skills use the separate [ownership transfer workflow](./cli.md#transfer).
+Transfers to another user normally require recipient acceptance.
 
 If you do not have access to the current owner but believe your org, project, or
 brand is the rightful namespace owner, open an

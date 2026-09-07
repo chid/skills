@@ -120,9 +120,17 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   raise its own comparison point. Each of the latest 14 days is compared with a
   threshold derived from the platform P95 growth multiple and P95 absolute
   excess; at least 10 days must exceed that threshold. The same skill must also
-  reach at least 6,400 downloads and at least ten times the platform 30-day
-  download P99, with at most 5 installs in the 14-day window. This
-  order-of-magnitude gate prevents broad crawler traffic from being presented
+  reach a distributed download total within those same 14 days of at least
+  6,400 or ten times the platform 30-day download P99, whichever is higher.
+  Each day's contribution to this decision is capped at one tenth of that
+  required total; reported download counts remain uncapped. Older downloads
+  cannot satisfy this gate, and one recent burst cannot turn otherwise modest
+  traffic into a sustained signal. Uneven daily traffic may still qualify;
+  there is no additional minimum volume required on each abnormal day.
+  At most 5 installs are allowed in the 14-day window. The standalone surge
+  detector is independent and uses uncapped counts, so one extreme day can
+  still trigger a surge signal without qualifying as sustained. These
+  volume requirements prevent broad crawler traffic from being presented
   as a publisher-specific anomaly. This
   catches traffic that arrives at a steady, exceptionally high rate after a
   cold start instead of only detecting a spike on the day it begins. These
@@ -348,6 +356,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   storage-id path must include the matching `clawpackUploadTicket`, and the
   server must reject tickets from a different auth context, expired or used
   tickets, and storage blobs created before the ticket.
+- The inline multipart budget (`MAX_PACKAGE_MULTIPART_BYTES`) must stay below
+  the 4.5 MB request body cap of the Vercel functions that front `clawhub.ai`.
+  Anything larger goes through the upload-url flow, which uploads straight to
+  Convex storage; the CLI picks the route from the same shared constant.
 - Direct package publish multipart bytes are capped at 18MB so callers get a
   clear ClawHub validation error before hitting Convex's 20MB HTTP action body
   cap. ClawPack tarballs keep the 120MB package tarball cap through staged
@@ -404,7 +416,22 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   and worker behavior remain separate internally.
 - ClawScan verdicts come from a GitHub Actions Codex worker, not a single
   hosted LLM call. Codex reviews the materialized artifact workspace with
-  SkillSpector and static scan evidence as context.
+  SkillSpector, A.I.G, and static scan evidence as context.
+- ClawScan is the sole authority for the stored risk-analysis verdict and its
+  moderation consequences. A.I.G is required supporting evidence for skill
+  scans: missing, failed, or malformed A.I.G output fails the worker through
+  the normal retry lifecycle, but an A.I.G finding never independently blocks,
+  hides, or changes installability. Package releases skip the skill-only A.I.G
+  scanner.
+- Production workers install A.I.G and its complete Python dependency set from
+  the reviewed, hash-locked worker requirements file. Updating the scanner or a
+  dependency requires an explicit lock update; a mutable package-index artifact
+  must not enter a credentialed scan worker.
+- A.I.G 0.2.1 is affected by CVE-2026-84809 and cannot inspect packaged Python
+  bytecode. While that version remains pinned, both worker paths must reject
+  skill targets containing `.pyc`, `.pyo`, or `.pyd` files before invoking
+  A.I.G. ClawScan's static scanner independently flags packaged Python bytecode,
+  but that defense does not remove the worker-boundary rejection requirement.
 - In the external Codex security worker, package-release SkillSpector runs scan
   only normalized bundled-skill roots declared by the stored plugin manifest
   summary. The plugin package root is never a fallback SkillSpector target;
@@ -418,6 +445,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   target kind and source through the same completion/failure contract. Skill
   versions and scan requests use the isolated `artifact` root; extracted
   ClawPack releases use `artifact/package`.
+- Both workers disambiguate directories containing `SKILL.md` and
+  `openclaw.plugin.json` by selecting the manifest matching the claimed target
+  kind. ClawScan still scans the full directory. Single-manifest directory
+  scans and the separate bundled-SkillSpector directory base remain unchanged.
 - OSS ClawScan is the only security-scan implementation. Every claimed target
   kind and source runs through the same ClawScan profile and completion/failure
   contract. ClawScan failures use the existing failure/retry lifecycle; there

@@ -640,6 +640,12 @@ On the unified `/api/v1/packages` endpoint it is plugin-only; use
 
 Legacy aliases are not accepted as stored or author-declared category values.
 
+### `GET /api/v1/plugins/categories`
+
+Returns the canonical plugin discovery taxonomy in display order. Each category
+contains `slug`, `label`, `description`, a bare Lucide `icon` key, and numeric
+`order`.
+
 ### `GET /api/v1/skills/export`
 
 Bulk export of latest public skills for offline analysis.
@@ -1378,9 +1384,11 @@ Publishes a code-plugin or bundle-plugin release.
 - Use either `files` or `clawpack`, never both in the same request.
 - JSON bodies and caller-supplied `payload.files` / `payload.artifact`
   metadata are rejected.
-- Direct multipart publish requests are capped at 18MB. ClawPack tarballs may
-  use the upload-url flow up to the 120MB tarball cap.
-- Optional payload field: `ownerHandle`. When present, only admins may publish on behalf of that owner.
+- Direct multipart publish requests are capped at 4MB because the public API is
+  served through Vercel functions, which reject larger request bodies with
+  `413` before ClawHub sees them. Larger ClawPack tarballs must use the
+  upload-url flow, up to the 120MB tarball cap.
+- Optional payload field: `ownerHandle`. The actor must have publish access to the selected publisher.
 
 Validation highlights:
 
@@ -1394,6 +1402,26 @@ Validation highlights:
 - Only the `openclaw` org publisher and current `openclaw` org members'
   personal publishers may publish to the `official` channel.
 - On-behalf publishes still validate official-channel eligibility against the target owner account.
+
+### `POST /api/v1/publish/attempts/{id}/recover`
+
+Recover a failed staged OpenClaw plugin release with a normal user Bearer token
+and current package publish access. The only accepted JSON field is:
+
+```json
+{ "manualOverrideReason": "Retry the retained artifacts after workflow failure" }
+```
+
+The reason must contain 1–500 characters after trimming. A new successor returns
+`202`; an exact authorized replay returns `200` and its existing outcome.
+Responses contain `ok`, `attemptId`, `recoveredFromAttemptId`, `packageId`,
+`releaseId`, `name`, `version`, `status`, `publicationStatus`, and `reused`.
+Follow the successor with `GET /api/v1/publish/attempts/{id}` using the same user
+token. Pending is not published; fresh security checks and current authorization
+must pass before the retained release becomes public.
+
+Invalid bodies return `400`, invalid credentials `401`, undisclosed or missing
+attempts `404`, and conflicting or ineligible recovery state `409`.
 
 ### `DELETE /api/v1/skills/{slug}` / `POST /api/v1/skills/{slug}/undelete`
 
@@ -1648,7 +1676,7 @@ Still supported for older CLI versions:
 - `GET /api/cli/whoami`
 - `POST /api/cli/upload-url`
 - `POST /api/cli/publish`
-- `POST /api/cli/telemetry/install`
+- `POST /api/cli/telemetry/install` — also used by the current CLI for install events.
 - `POST /api/cli/skill/delete`
 - `POST /api/cli/skill/undelete`
 

@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClaimedJob } from "./run-codex-scan-worker";
 import {
   aggregateSkillSpectorAnalyses,
+  normalizeAigAnalysis,
   processJob,
   resolveBundledSkillSpectorScanInputs,
   runClawScan,
@@ -181,14 +182,17 @@ function completeJudgeResult(verdict: ClawScanVerdict) {
 }
 
 function clawScanArtifactJson(options?: {
+  aigRaw?: unknown;
   completedAt?: string;
   includeCompletedAt?: boolean;
   judgeResult?: Record<string, unknown>;
-  scannerStatuses?: Partial<Record<"clawscan-static" | "skillspector", string>>;
+  omitAigRaw?: boolean;
+  scannerStatuses?: Partial<Record<"aig" | "clawscan-static" | "skillspector", string>>;
   verdict?: ClawScanVerdict;
 }) {
   const verdict = options?.verdict ?? "benign";
   const scannerStatuses = {
+    aig: "completed",
     "clawscan-static": "completed",
     skillspector: "completed",
     ...options?.scannerStatuses,
@@ -197,6 +201,29 @@ function clawScanArtifactJson(options?: {
     schemaVersion: "clawscan-run-v1",
     profile: "clawhub",
     scanners: {
+      aig: {
+        status: scannerStatuses.aig,
+        ...(options?.omitAigRaw
+          ? {}
+          : {
+              raw: options?.aigRaw ?? {
+                version: "2.1.0",
+                runs: [
+                  {
+                    tool: { driver: { name: "aig-skill-scan", version: "0.2.1" } },
+                    results: [
+                      {
+                        ruleId: "T04",
+                        level: "error",
+                        message: { text: "Embedded payload" },
+                        properties: { remediation: "Remove the payload." },
+                      },
+                    ],
+                  },
+                ],
+              },
+            }),
+      },
       skillspector: {
         status: scannerStatuses.skillspector,
         raw: {
@@ -230,6 +257,108 @@ function clawScanArtifactJson(options?: {
 }
 
 describe("run-codex-scan-worker clawscan authority", () => {
+  it("drops non-finite and invalid A.I.G SARIF line numbers", () => {
+    const analysis = normalizeAigAnalysis(
+      '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[{"ruleId":"T04","message":{"text":"Finding"},"locations":[{"physicalLocation":{"region":{"startLine":1e400,"endLine":-1}}}]}]}]}',
+      123,
+    );
+
+    expect(analysis.findings).toEqual([
+      expect.not.objectContaining({ startLine: expect.anything(), endLine: expect.anything() }),
+    ]);
+  });
+
+  it("rejects malformed A.I.G SARIF results explicitly", () => {
+    expect(
+      normalizeAigAnalysis(
+        '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[null]}]}',
+        123,
+      ),
+    ).toEqual({
+      status: "error",
+      issueCount: 0,
+      findings: [],
+      error: "A.I.G SARIF output contained a malformed result.",
+      checkedAt: 123,
+    });
+  });
+
+  it("passes only the approved provider endpoint to ClawScan", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Safe skill\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    const environmentLog = join(workspace, "clawscan-environment.log");
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `printf '%s\\n' "\${DEFAULT_BASE_URL-}" "\${OPENAI_BASE_URL-}" "\${OPENAI_API_KEY-}" "\${SECURITY_SCAN_WORKER_TOKEN-}" > ${JSON.stringify(environmentLog)}
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+cat > "$out" <<'JSON'
+${clawScanArtifactJson({ verdict: "benign" })}
+JSON`,
+    );
+
+    const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+    const previousSandbox = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX;
+    const previousDefaultBaseUrl = process.env.DEFAULT_BASE_URL;
+    const previousOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
+    const previousOpenAiApiKey = process.env.OPENAI_API_KEY;
+    const previousWorkerToken = process.env.SECURITY_SCAN_WORKER_TOKEN;
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX = "off";
+    process.env.DEFAULT_BASE_URL = "https://api.openai.com/v1";
+    process.env.OPENAI_BASE_URL = "https://unapproved.example.invalid/v1";
+    process.env.OPENAI_API_KEY = "mock-provider-key";
+    process.env.SECURITY_SCAN_WORKER_TOKEN = "mock-worker-token";
+
+    try {
+      const onDiagnostic = vi.fn();
+      await runClawScan(
+        skillVersionJob("securityScanJobs:restricted-environment"),
+        workspace,
+        onDiagnostic,
+      );
+
+      expect(onDiagnostic).toHaveBeenCalledWith(
+        expect.objectContaining({
+          args: expect.arrayContaining(["--sandbox", "off"]),
+        }),
+      );
+
+      expect((await readFile(environmentLog, "utf8")).split("\n")).toEqual([
+        "https://api.openai.com/v1",
+        "",
+        "mock-provider-key",
+        "",
+        "",
+      ]);
+    } finally {
+      if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
+      if (previousSandbox === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX;
+      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX = previousSandbox;
+      if (previousDefaultBaseUrl === undefined) delete process.env.DEFAULT_BASE_URL;
+      else process.env.DEFAULT_BASE_URL = previousDefaultBaseUrl;
+      if (previousOpenAiBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = previousOpenAiBaseUrl;
+      if (previousOpenAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousOpenAiApiKey;
+      if (previousWorkerToken === undefined) delete process.env.SECURITY_SCAN_WORKER_TOKEN;
+      else process.env.SECURITY_SCAN_WORKER_TOKEN = previousWorkerToken;
+    }
+  });
+
   it.each([
     {
       name: "zero roots",
@@ -345,6 +474,8 @@ describe("run-codex-scan-worker clawscan authority", () => {
     await mkdir(join(packageRoot, "skills", "alpha"), { recursive: true });
     await mkdir(join(packageRoot, "skills", "beta"), { recursive: true });
     await writeFile(join(packageRoot, "package.json"), "{}\n");
+    await writeFile(join(packageRoot, "openclaw.plugin.json"), '{"id":"demo-plugin"}\n');
+    await writeFile(join(packageRoot, "SKILL.md"), "# Bundled skill\n");
     await writeFile(join(packageRoot, "skills", "alpha", "SKILL.md"), "# alpha\n");
     await writeFile(join(packageRoot, "skills", "beta", "SKILL.md"), "# beta\n");
 
@@ -375,7 +506,8 @@ JSON`,
     const copiedFixture = join(workspace, "skillspector-fixture.json");
     await writeFakeClawScanCommand(
       fakeClawScan,
-      `out=""
+      `test "$1" = "./artifact/package/openclaw.plugin.json"
+out=""
 fixture=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -555,6 +687,11 @@ JSON`,
             status: expectedStatus,
             verdict,
           },
+          aigAnalysis: {
+            issueCount: 1,
+            scannerVersion: "0.2.1",
+            status: "suspicious",
+          },
           skillSpectorAnalysis: {
             issueCount: 1,
             status: "suspicious",
@@ -635,6 +772,7 @@ JSON`,
       const fakeClawScan = join(workspace, "fake-clawscan");
       const argsLog = join(workspace, "clawscan-args.log");
       const filesLog = join(workspace, "clawscan-files.log");
+      const isPackageRelease = targetKind === "packageRelease";
       await writeFakeClawScanCommand(
         fakeClawScan,
         `target="$1"
@@ -654,7 +792,10 @@ out=""
 done
 mkdir -p "$(dirname "$out")"
 cat > "$out" <<'JSON'
-${clawScanArtifactJson()}
+${clawScanArtifactJson({
+  omitAigRaw: isPackageRelease,
+  scannerStatuses: isPackageRelease ? { aig: "skipped" } : undefined,
+})}
 JSON`,
       );
 
@@ -695,6 +836,14 @@ JSON`,
             issueCount: 1,
             status: "suspicious",
           },
+          ...(isPackageRelease
+            ? { aigAnalysis: undefined }
+            : {
+                aigAnalysis: {
+                  issueCount: 1,
+                  status: "suspicious",
+                },
+              }),
         });
 
         const invocationArgs = (await readFile(argsLog, "utf8")).trim().split("\n");
@@ -882,6 +1031,63 @@ echo "not json" > "$out"`,
       expect(client.action).toHaveBeenCalledTimes(1);
       expect(client.action.mock.calls[0]?.[1]).toMatchObject({
         error: "ClawScan did not emit a valid JSON artifact",
+      });
+    } finally {
+      if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
+    }
+  });
+
+  it("fails the job when completed A.I.G output has no SARIF run", async () => {
+    const workspace = await tempDir();
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    const artifactJson = clawScanArtifactJson({
+      aigRaw: { version: "2.1.0", runs: [] },
+    });
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+${artifactJson}
+JSON`,
+    );
+
+    const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+    try {
+      const client = {
+        action: vi.fn(async (...args: unknown[]) => {
+          const payload = args[1] as { error?: string } | undefined;
+          return payload?.error ? { retry: false } : {};
+        }),
+      };
+
+      await expect(
+        processJob(
+          client,
+          "worker-auth",
+          skillVersionJob("securityScanJobs:aig-empty-runs"),
+          undefined,
+        ),
+      ).resolves.toEqual({
+        completed: false,
+        hardFailed: true,
+        retryableFailed: false,
+      });
+      expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+        error: "A.I.G SARIF output did not contain a run.",
       });
     } finally {
       if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;

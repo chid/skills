@@ -101,6 +101,25 @@ export type PackageVersionDetail = {
       error?: string;
       checkedAt: number;
     } | null;
+    aigAnalysis?: {
+      status: string;
+      issueCount: number;
+      findings: Array<{
+        ruleId: string;
+        level: string;
+        message: string;
+        title?: string;
+        description?: string;
+        file?: string;
+        startLine?: number;
+        endLine?: number;
+        remediation?: string;
+      }>;
+      scannerVersion?: string;
+      summary?: string;
+      error?: string;
+      checkedAt: number;
+    } | null;
     llmAnalysis?: {
       status: string;
       verdict?: string;

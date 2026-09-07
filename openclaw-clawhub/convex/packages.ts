@@ -70,9 +70,14 @@ import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
 import { toDayKey } from "./lib/leaderboards";
+import type { StaticScanResult } from "./lib/moderationEngine";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
+import {
+  assertManualRecoveryFinalization,
+  manualPackageRecovery,
+} from "./lib/packagePublishRecovery";
 import {
   assertPackageVersion,
   derivePluginManifestSummary,
@@ -132,8 +137,8 @@ import {
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import { buildPackageInventoryDigest, hashSkillFiles } from "./lib/skills";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
-import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
+import { ACTIVE_PUBLISH_ATTEMPT_STATUSES, failedPublishAttemptPatch } from "./publishAttempts";
 import schema from "./schema";
 
 const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
@@ -353,6 +358,28 @@ const skillSpectorAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const aigAnalysisValidator = v.object({
+  status: v.string(),
+  issueCount: v.number(),
+  findings: v.array(
+    v.object({
+      ruleId: v.string(),
+      level: v.string(),
+      message: v.string(),
+      title: v.optional(v.string()),
+      description: v.optional(v.string()),
+      file: v.optional(v.string()),
+      startLine: v.optional(v.number()),
+      endLine: v.optional(v.number()),
+      remediation: v.optional(v.string()),
+    }),
+  ),
+  scannerVersion: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  error: v.optional(v.string()),
+  checkedAt: v.number(),
+});
+
 const PACKAGE_STAT_EVENT_BATCH_SIZE = 100;
 export const PROCESSED_PACKAGE_STAT_EVENT_PRUNE_CONFIRMATION_TOKEN =
   "PRUNE_PROCESSED_PACKAGE_STAT_EVENTS";
@@ -510,6 +537,9 @@ const internalRefs = internal as unknown as {
   };
   packageInspectorNode: {
     runPackageInspectorForPublishInternal: unknown;
+  };
+  staticPublishScanNode: {
+    runStaticPublishScanInternal: unknown;
   };
   packagePublishTokens: {
     createInternal: unknown;
@@ -990,6 +1020,38 @@ async function runActionRef<T>(
   return (await ctx.runAction(ref as never, args as never)) as T;
 }
 
+// The moderation scan decodes every package file; large ClawPacks exceed the
+// Convex runtime's 64 MiB action ceiling, so it runs in the Node runtime.
+async function runStaticPublishScanInNode(
+  ctx: { runAction: (ref: never, args: never) => Promise<unknown> },
+  input: {
+    slug: string;
+    displayName: string;
+    summary?: string;
+    metadata?: unknown;
+    files: ReadonlyArray<{ path: string; size: number; storageId: string; contentType?: string }>;
+  },
+): Promise<StaticScanResult> {
+  return await runActionRef<StaticScanResult>(
+    ctx,
+    internalRefs.staticPublishScanNode.runStaticPublishScanInternal,
+    stripUndefinedForStoredAttempt({
+      slug: input.slug,
+      displayName: input.displayName,
+      summary: input.summary,
+      // JSON string, not a Convex object: manifests carry `$schema` keys, which
+      // Convex values reject, and the scan must see the metadata unchanged.
+      metadataJson: input.metadata === undefined ? undefined : JSON.stringify(input.metadata),
+      files: input.files.map(({ path, size, storageId, contentType }) => ({
+        path,
+        size,
+        storageId: storageId as Id<"_storage">,
+        contentType,
+      })),
+    }),
+  );
+}
+
 async function runAfterRef(
   ctx: {
     scheduler: {
@@ -1279,6 +1341,7 @@ function toPublicPackageRelease(release: Doc<"packageReleases">, family: Package
           : release.verification,
       sha256hash: release.sha256hash,
       vtAnalysis: release.vtAnalysis,
+      aigAnalysis: release.aigAnalysis,
       skillSpectorAnalysis: release.skillSpectorAnalysis,
       llmAnalysis: release.llmAnalysis,
       staticScan: release.staticScan,
@@ -8281,10 +8344,15 @@ async function reverifyOpenClawAuthorizationEvidence(
 async function reverifyStagedOpenClawAuthorizationBeforeFinalize(
   ctx: ActionCtx,
   claim: {
+    attemptId: Id<"publishAttempts">;
     packageId?: Id<"packages">;
     packageFollowup: unknown;
   },
+  claimId: string,
 ) {
+  if (manualPackageRecovery(claim.packageFollowup)) {
+    return { manualRecoveryAttemptId: claim.attemptId, manualRecoveryClaimId: claimId };
+  }
   const followup = claim.packageFollowup as {
     packageName?: string;
     version?: string;
@@ -8839,7 +8907,7 @@ async function publishPackageImpl(
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
   }
   const topics = normalizedTopics.length ? normalizedTopics : undefined;
-  const staticScan = await runStaticPublishScan(ctx, {
+  const staticScan = await runStaticPublishScanInNode(ctx, {
     slug: name,
     displayName,
     summary,
@@ -9403,7 +9471,7 @@ export const finalizePackagePublishAttemptInternal = internalAction({
     try {
       const trustedPublishAuthorization =
         claim.releaseId !== undefined
-          ? await reverifyStagedOpenClawAuthorizationBeforeFinalize(ctx, claim)
+          ? await reverifyStagedOpenClawAuthorizationBeforeFinalize(ctx, claim, claimId)
           : undefined;
       publishResult =
         claim.releaseId !== undefined
@@ -11084,33 +11152,77 @@ export const discardPendingPackagePublicationInternal = internalMutation({
     packageId: v.id("packages"),
     releaseId: v.id("packageReleases"),
     createdNewParent: v.optional(v.boolean()),
+    reason: v.optional(v.string()),
+    attemptId: v.optional(v.id("publishAttempts")),
   },
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    deleted: boolean;
+    parentDeleted?: boolean;
+    retiredAttemptIds: Id<"publishAttempts">[];
+  }> => {
     const release = await ctx.db.get(args.releaseId);
     if (
-      !release ||
-      release.packageId !== args.packageId ||
-      release.publicationStatus !== "pending"
+      release &&
+      (release.packageId !== args.packageId || release.publicationStatus !== "pending")
     ) {
-      return { deleted: false };
+      return { deleted: false, retiredAttemptIds: [] };
+    }
+
+    const pkg = await ctx.db.get(args.packageId);
+    const attempts: Doc<"publishAttempts">[] = [];
+    if (args.attemptId) {
+      const attempt = await ctx.db.get(args.attemptId);
+      if (
+        !attempt ||
+        attempt.kind !== "package" ||
+        attempt.packageId !== args.packageId ||
+        attempt.packageReleaseId !== args.releaseId
+      ) {
+        throw new ConvexError("Publish attempt does not own the pending package release");
+      }
+      if (!ACTIVE_PUBLISH_ATTEMPT_STATUSES.some((status) => status === attempt.status)) {
+        return { deleted: false, retiredAttemptIds: [] };
+      }
+      attempts.push(attempt);
+    } else if (pkg) {
+      for (const status of ACTIVE_PUBLISH_ATTEMPT_STATUSES) {
+        // Bound large attempt reads; operators can call this mutation with attemptId for more.
+        const matches = await ctx.db
+          .query("publishAttempts")
+          .withIndex("by_kind_status_slug_version_created", (q) => {
+            const byName = q.eq("kind", "package").eq("status", status).eq("slug", pkg.name);
+            return release ? byName.eq("version", release.version) : byName;
+          })
+          .take(200);
+        attempts.push(...matches.filter((attempt) => attempt.packageReleaseId === args.releaseId));
+      }
     }
 
     const storageIds = new Set<Id<"_storage">>();
-    for (const file of release.files ?? []) {
+    for (const file of release?.files ?? []) {
       if (typeof file.storageId === "string") {
         storageIds.add(file.storageId as Id<"_storage">);
       }
     }
-    if (typeof release.clawpackStorageId === "string") {
+    if (typeof release?.clawpackStorageId === "string") {
       storageIds.add(release.clawpackStorageId as Id<"_storage">);
     }
 
-    await ctx.db.delete(release._id);
+    if (release) await ctx.db.delete(release._id);
     await Promise.allSettled([...storageIds].map((storageId) => ctx.storage.delete(storageId)));
+
+    // This reason is publisher-visible as `error` in the publish attempt status API.
+    const error = args.reason ?? "Pending package release discarded";
+    const now = Date.now();
+    for (const attempt of attempts) {
+      await ctx.db.patch(attempt._id, failedPublishAttemptPatch(attempt.status, error, now));
+    }
 
     let parentDeleted = false;
     if (args.createdNewParent) {
-      const pkg = await ctx.db.get(args.packageId);
       if (pkg && !pkg.latestReleaseId) {
         const remainingReleases = await ctx.db
           .query("packageReleases")
@@ -11123,7 +11235,11 @@ export const discardPendingPackagePublicationInternal = internalMutation({
       }
     }
 
-    return { deleted: true, parentDeleted };
+    return {
+      deleted: Boolean(release),
+      parentDeleted,
+      retiredAttemptIds: attempts.map((attempt) => attempt._id),
+    };
   },
 });
 
@@ -11197,6 +11313,8 @@ export const publishPendingReleaseInternal = internalMutation({
     trustedPublishTokenId: v.optional(v.id("packagePublishTokens")),
     trustedPublishInventoryDigest: v.optional(v.string()),
     trustedPublishAuthorizationVersion: v.optional(v.literal(2)),
+    manualRecoveryAttemptId: v.optional(v.id("publishAttempts")),
+    manualRecoveryClaimId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const release = await ctx.db.get(args.releaseId);
@@ -11220,6 +11338,16 @@ export const publishPendingReleaseInternal = internalMutation({
     }
 
     const metadata = pendingPackagePublicationMetadata(release);
+    const manualRecovery =
+      manualPackageRecovery(metadata) || args.manualRecoveryAttemptId
+        ? await assertManualRecoveryFinalization(
+            ctx,
+            pkg,
+            release,
+            args.manualRecoveryAttemptId,
+            args.manualRecoveryClaimId,
+          )
+        : undefined;
     // The pending row and finalizer must present the same v2 binding. Recheck
     // mutable revocation and publisher state in the transaction that goes public.
     if (
@@ -11309,6 +11437,9 @@ export const publishPendingReleaseInternal = internalMutation({
       pendingPublication: undefined,
       distTags: effectiveTags,
       verification: releaseVerification,
+      ...(manualRecovery
+        ? { publishActor: { kind: "user" as const, userId: manualRecovery.actorUserId } }
+        : {}),
     });
 
     await ctx.db.patch(pkg._id, {
@@ -12103,6 +12234,20 @@ export const updateReleaseSkillSpectorAnalysisInternal = internalMutation({
   },
 });
 
+export const updateReleaseAigAnalysisInternal = internalMutation({
+  args: {
+    releaseId: v.id("packageReleases"),
+    aigAnalysis: v.optional(aigAnalysisValidator),
+  },
+  handler: async (ctx, args) => {
+    const release = await ctx.db.get(args.releaseId);
+    if (!isReleaseActive(release)) return;
+    await ctx.db.patch(args.releaseId, {
+      aigAnalysis: args.aigAnalysis,
+    });
+  },
+});
+
 export const updateReleaseLlmAnalysisInternal = internalMutation({
   args: {
     releaseId: v.id("packageReleases"),
@@ -12409,7 +12554,7 @@ export const scanPackageReleaseStaticallyInternal = internalAction({
       return { ok: true as const, skipped: "missing_package" as const };
     }
 
-    const staticScan = await runStaticPublishScan(ctx, {
+    const staticScan = await runStaticPublishScanInNode(ctx, {
       slug: pkg.name,
       displayName: pkg.displayName,
       summary: pkg.summary,

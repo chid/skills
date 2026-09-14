@@ -16,6 +16,12 @@ import {
 } from "./publicRouteReservations";
 import { getFrontmatterValue, parseFrontmatter, sanitizePath } from "./skills";
 
+export const REAL_BUNDLE_MANIFESTS = [
+  { path: ".codex-plugin/plugin.json", format: "codex" },
+  { path: ".claude-plugin/plugin.json", format: "claude" },
+  { path: ".cursor-plugin/plugin.json", format: "cursor" },
+] as const;
+
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 
 type PublishFile = {
@@ -279,8 +285,8 @@ export function derivePluginManifestSummary(params: {
   skillManifest?: JsonRecord;
   files: PluginManifestSummaryFile[];
   compatibility?: PackageCompatibility;
+  categories?: readonly string[];
 }) {
-  const icon = normalizePluginManifestIcon(params.pluginManifest);
   const compatibility = extractCompatibilityFromManifest(
     params.pluginManifest,
     params.compatibility,
@@ -313,7 +319,7 @@ export function derivePluginManifestSummary(params: {
 
   return {
     schemaVersion: 1 as const,
-    ...(icon ? { icon } : {}),
+    ...(params.categories ? { categories: [...params.categories] } : {}),
     ...(compatibility ? { compatibility } : {}),
     ...(manifestIdentity ? { manifestIdentity } : {}),
     configFields: extractConfigFields(params.pluginManifest),
@@ -567,18 +573,6 @@ export function maybeParseJson(text: string | null | undefined) {
   const trimmed = text.trim();
   if (!trimmed) return undefined;
   return parseJsonFile(trimmed, "JSON file");
-}
-
-export function normalizePluginManifestIcon(manifest: unknown): string | undefined {
-  if (!isRecord(manifest) || typeof manifest.icon !== "string") return undefined;
-  const icon = manifest.icon.trim();
-  if (!icon) return undefined;
-  try {
-    const url = new URL(icon);
-    return url.protocol === "https:" ? icon : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 export function toConvexSafeJsonValue(

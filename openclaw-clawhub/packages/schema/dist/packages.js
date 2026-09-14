@@ -3,6 +3,7 @@ import { ClawManifestSummarySchema } from "./claws.js";
 import { DocsLinks } from "./docsLinks.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
 export const PACKAGE_TRENDING_LEADERBOARD_LIMIT = 200;
+export const PACKAGE_CATEGORY_BATCH_LIMIT = 200;
 export function normalizePackageOwnerHandle(handle) {
     const normalized = handle?.trim().replace(/^@+/, "").toLowerCase();
     return normalized || undefined;
@@ -36,6 +37,7 @@ export const PackageCompatibilitySchema = type({
 });
 export const PluginManifestSummarySchema = type({
     schemaVersion: "number",
+    categories: "string[]?",
     icon: "string?",
     compatibility: PackageCompatibilitySchema.optional(),
     manifestIdentity: type({
@@ -60,6 +62,24 @@ export const PluginManifestSummarySchema = type({
         skillMdPath: "string",
         sha256: "string",
         size: "number",
+    }).array(),
+});
+const PackageVersionIdentitySchema = type({
+    "+": "reject",
+    name: "string",
+    version: "string",
+});
+export const ApiV1PackageCategoriesBatchRequestSchema = type({
+    "+": "reject",
+    packages: PackageVersionIdentitySchema.array(),
+});
+export const ApiV1PackageCategoriesBatchResponseSchema = type({
+    "+": "reject",
+    packages: type({
+        "+": "reject",
+        name: "string",
+        version: "string",
+        categories: "string[]|null",
     }).array(),
 });
 export const PackageVerificationSummarySchema = type({
@@ -303,7 +323,7 @@ export const ServerPackagePublishRequestSchema = type({
     artifact: PackagePublishArtifactSchema.optional(),
     files: CliPublishFileSchema.array(),
 });
-export const PackageListItemSchema = type({
+const PackageListItemFields = {
     name: "string",
     displayName: "string",
     family: PackageFamilySchema,
@@ -313,6 +333,7 @@ export const PackageListItemSchema = type({
     summary: "string|null?",
     icon: "string|null?",
     ownerHandle: "string|null?",
+    ownerOfficial: "boolean?",
     createdAt: "number",
     updatedAt: "number",
     latestVersion: "string|null?",
@@ -321,6 +342,27 @@ export const PackageListItemSchema = type({
     featuredAt: "number?",
     verificationTier: PackageVerificationTierSchema.or("null").optional(),
     stats: PackageStatsSchema.optional(),
+};
+export const PackageListItemSchema = type(PackageListItemFields);
+export const PluginOverviewItemSchema = type({
+    "+": "reject",
+    ...PackageListItemFields,
+    featured: "boolean?",
+    featuredRank: "number?",
+    trending: "boolean?",
+    trendingRank: "number?",
+});
+export const ApiV1PluginOverviewResponseSchema = type({
+    "+": "reject",
+    categories: type({
+        "+": "reject",
+        slug: "string",
+        label: "string",
+        description: "string",
+        icon: "string",
+        order: "number",
+    }).array(),
+    items: PluginOverviewItemSchema.array(),
 });
 export const ApiV1PackageListResponseSchema = type({
     items: PackageListItemSchema.array(),
@@ -813,6 +855,21 @@ export const ApiV1PackagePublishResponseSchema = type({
 });
 export const PackagePublishAttemptStatusSchema = type('"pending_checks"|"ready_to_finalize"|"finalizing"|"finalized"|"blocked"|"failed"|"expired"');
 export const PackagePublicationStatusSchema = type('"pending"|"published"|"blocked"|"failed"|"expired"');
+export const ApiV1PackagePublishRecoveryRequestSchema = type({
+    manualOverrideReason: "string",
+});
+export const ApiV1PackagePublishRecoveryResponseSchema = type({
+    ok: "true",
+    attemptId: "string",
+    recoveredFromAttemptId: "string",
+    packageId: "string",
+    releaseId: "string",
+    name: "string",
+    version: "string",
+    status: PackagePublishAttemptStatusSchema,
+    publicationStatus: PackagePublicationStatusSchema,
+    reused: "boolean",
+});
 export const PackagePublishAttemptCheckSchema = type({
     status: '"pending"|"clean"|"blocked"|"failed"',
     summary: "string?",

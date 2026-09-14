@@ -1,0 +1,41 @@
+[
+  {
+    "name": "copilotprompts-prompt-m365-professional-headshot-prompt",
+    "source": "pnp",
+    "title": "Professional Headshot",
+    "shortDescription": "Create a cinematic professional headshot from an attached photo with customizable attire and a polished office setting.",
+    "url": "https://github.com/pnp/copilot-prompts/tree/main/samples/prompts/m365-professional-headshot-prompt",
+    "downloadUrl": "https://pnp.github.io/download-partial/?url=https://github.com/pnp/copilot-prompts/tree/main/samples/prompts/m365-professional-headshot-prompt",
+    "longDescription": [
+      "Create a cinematic professional headshot from an attached photo while preserving facial features and customizing the subject's attire, lighting, and polished Microsoft office setting."
+    ],
+    "creationDateTime": "2026-09-14",
+    "updateDateTime": "2026-09-14",
+    "products": [
+      "Microsoft Copilot"
+    ],
+    "metadata": [],
+    "thumbnails": [
+      {
+        "type": "image",
+        "order": 100,
+        "url": "https://github.com/pnp/copilot-prompts/raw/main/samples/prompts/m365-professional-headshot-prompt/assets/demo.jpeg",
+        "alt": "Professional headshot prompt screenshot"
+      }
+    ],
+    "authors": [
+      {
+        "gitHubAccount": "girliemac",
+        "pictureUrl": "https://github.com/girliemac.png",
+        "name": "Tomomi Imura"
+      }
+    ],
+    "references": [
+      {
+        "name": "Microsoft Copilot",
+        "description": "Microsoft Copilot",
+        "url": "https://copilot.microsoft.com/"
+      }
+    ]
+  }
+]

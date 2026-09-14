@@ -1,7 +1,7 @@
 import {
   ServerPackagePublishRequestSchema,
+  PACKAGE_CATEGORY_BATCH_LIMIT,
   validateClawPackageContents,
-  derivePluginCategoryTags,
   getCatalogTopicSlugs,
   getPackageScopeOwnerMismatch,
   INTERNAL_UNCATEGORIZED_CATEGORY,
@@ -11,6 +11,7 @@ import {
   normalizePluginCategories,
   parseArk,
   resolvePluginCategories,
+  resolveStoredPluginCategories,
   validateOpenClawExternalCodePluginPackageContents,
   type PackageArtifactSummary,
   type PackageChannel,
@@ -71,9 +72,10 @@ import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
 import { toDayKey } from "./lib/leaderboards";
 import type { StaticScanResult } from "./lib/moderationEngine";
-import { isOfficialPublisher } from "./lib/officialPublishers";
+import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
+import { resolvePackageIcon } from "./lib/packageIcons";
 import {
   assertManualRecoveryFinalization,
   manualPackageRecovery,
@@ -85,11 +87,11 @@ import {
   extractBundlePluginArtifacts,
   extractCodePluginArtifacts,
   maybeParseJson,
-  normalizePluginManifestIcon,
   normalizePackageName,
   normalizePublishFiles,
   readStorageText,
   readOptionalTextFile,
+  REAL_BUNDLE_MANIFESTS,
   summarizePackageForSearch,
   toConvexSafeJsonValue,
 } from "./lib/packageRegistry";
@@ -102,6 +104,11 @@ import {
   resolvePackageReleaseScanStatus,
 } from "./lib/packageSecurity";
 import { insertPackageInstallStatEvent } from "./lib/packageStatEvents";
+import {
+  classifyPluginCategories,
+  pluginCategoryClassificationValidator,
+  type PluginCategoryClassification,
+} from "./lib/pluginCategoryClassification";
 import { toPublicPublisher } from "./lib/public";
 import {
   assertCanManageOwnedResource,
@@ -171,11 +178,6 @@ const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
 const MAX_OFFICIAL_MIGRATION_NOTES_LENGTH = 2_000;
 const MAX_STORED_PACKAGE_METADATA_DEPTH = 10;
 const CURRENT_OPENCLAW_PROFILE_POLICY_VERSION = 1;
-const REAL_BUNDLE_MANIFESTS = [
-  { path: ".codex-plugin/plugin.json", format: "codex" },
-  { path: ".claude-plugin/plugin.json", format: "claude" },
-  { path: ".cursor-plugin/plugin.json", format: "cursor" },
-] as const;
 const INITIAL_PACKAGE_VT_SCAN_DELAY_MS = 30_000;
 const PLUGIN_EXPORT_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
 const GET_PAGE_TIEBREAKER_FIELD_COUNT = 2;
@@ -702,6 +704,7 @@ type PublicPackageListItem = {
   summary: string | null;
   icon: string | null;
   ownerHandle: string | null;
+  ownerOfficial: boolean;
   createdAt: number;
   updatedAt: number;
   latestVersion: string | null;
@@ -1458,12 +1461,17 @@ function packageArtifactSummary(
 function digestMatchesFilters(
   digest: PackageDigestLike,
   args: {
+    channel?: PackageChannel;
     category?: string;
     topic?: string;
     createdAfter?: number;
     excludedScanStatuses?: PackageListScanStatus[];
   },
 ) {
+  // Catalog discovery must not inherit an owner's permission to inspect hidden reservations.
+  if (digest.softDeletedAt || !digest.latestVersion) return false;
+  if (digest.channel === "private" && args.channel !== "private") return false;
+  if (isPackageBlockedFromPublic(digest.scanStatus)) return false;
   if (!isClawFamilyPubliclyVisible(digest.family)) return false;
   if (digest.scanStatus && args.excludedScanStatuses?.includes(digest.scanStatus)) return false;
   if (args.category) {
@@ -1506,6 +1514,7 @@ function packageMatchesListFilters(
   pkg: Doc<"packages">,
   args: {
     family?: PackageFamily;
+    families?: PackageFamily[];
     channel?: PackageChannel;
     isOfficial?: boolean;
     category?: string;
@@ -1513,9 +1522,13 @@ function packageMatchesListFilters(
     excludedScanStatuses?: PackageListScanStatus[];
   },
 ) {
+  if (pkg.softDeletedAt || !pkg.latestVersionSummary?.version) return false;
+  if (pkg.channel === "private" && args.channel !== "private") return false;
+  if (isPackageBlockedFromPublic(pkg.scanStatus)) return false;
   if (!isClawFamilyPubliclyVisible(pkg.family)) return false;
   if (pkg.scanStatus && args.excludedScanStatuses?.includes(pkg.scanStatus)) return false;
   if (args.family && pkg.family !== args.family) return false;
+  if (args.families?.length && !args.families.includes(pkg.family)) return false;
   if (args.channel && pkg.channel !== args.channel) return false;
   if (typeof args.isOfficial === "boolean" && pkg.isOfficial !== args.isOfficial) return false;
   if (args.category) {
@@ -1577,6 +1590,11 @@ async function toPublicPackageListItem(
   digest: PackageDigestLike,
   featuredAt?: number,
 ): Promise<PublicPackageListItem> {
+  // Publisher identity is independent of the package's official channel. Resolve
+  // current status so granting/revoking a badge needs no package digest backfill.
+  const publisher = digest.ownerPublisherId
+    ? await ctx.db.get(digest.ownerPublisherId)
+    : await getOwnerPublisher(ctx, digest);
   return {
     name: digest.name,
     displayName: digest.displayName,
@@ -1587,6 +1605,7 @@ async function toPublicPackageListItem(
     summary: digest.summary ?? null,
     icon: digest.icon ?? null,
     ownerHandle: digest.ownerHandle || null,
+    ownerOfficial: await isOfficialPublisher(ctx, publisher),
     createdAt: digest.createdAt,
     updatedAt: digest.updatedAt,
     latestVersion: digest.latestVersion ?? null,
@@ -1606,7 +1625,8 @@ async function toPublicPackageListItemFromPackage(
     pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
       ? extractPackageDigestFields(pkg)
       : pkg;
-  const owner = toPublicPublisher(
+  const owner = await toPublicPublisherWithOfficial(
+    ctx,
     await getOwnerPublisher(ctx, {
       ownerPublisherId: pkg.ownerPublisherId,
       ownerUserId: pkg.ownerUserId,
@@ -1622,6 +1642,7 @@ async function toPublicPackageListItemFromPackage(
     summary: pkg.summary ?? null,
     icon: pkg.icon ?? null,
     ownerHandle: owner?.handle ?? null,
+    ownerOfficial: owner?.official === true,
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
     latestVersion: pkg.latestVersionSummary?.version ?? null,
@@ -2757,6 +2778,36 @@ async function takeVisiblePackageCategoryDigestPage(
   };
 }
 
+const PLUGIN_OVERVIEW_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
+
+async function listPluginOverviewCategory(
+  ctx: DbReaderCtx,
+  args: { category: PluginCategorySlug; numItems: number },
+) {
+  const targetCount = Math.max(1, Math.min(args.numItems, MAX_PUBLIC_LIST_PAGE_SIZE));
+  // The marketplace home drops pagination, so select from the category indexes
+  // directly instead of truncating a sparse page from the general catalog scan.
+  const pages = await Promise.all(
+    PLUGIN_OVERVIEW_FAMILIES.map(
+      async (family) =>
+        await listOfficialFirstPackageCategoryPage(ctx, {
+          family,
+          category: args.category,
+          sort: "downloads",
+          paginationOpts: { cursor: null, numItems: targetCount },
+        }),
+    ),
+  );
+  return pages
+    .flatMap((page) => page.page)
+    .sort(
+      (a, b) =>
+        Number(b.isOfficial) - Number(a.isOfficial) ||
+        compareStablePackageDiscoveryCandidates(a, b, "downloads"),
+    )
+    .slice(0, targetCount);
+}
+
 async function fetchHighlightedPackageEntries(
   ctx: DbReaderCtx,
   args: {
@@ -2920,10 +2971,8 @@ function toPackageManageContext(
       _id: latestRelease._id,
       version: latestRelease.version,
     },
-    suggestedCategories: derivePluginCategoryTags({
-      family: pkg.family,
-      pluginManifest: latestRelease.extractedPluginManifest,
-    }),
+    // Historical artifacts may predate declaration validation; management reads persisted metadata.
+    suggestedCategories: resolveStoredPluginCategories(pkg),
   };
 }
 
@@ -3403,6 +3452,55 @@ export const getVersionByNameForViewerInternal = internalQuery({
         ...(release.clawpackStorageId ? { clawpackStorageId: release.clawpackStorageId } : {}),
       },
     };
+  },
+});
+
+export const resolveVersionCategoriesBatchInternal = internalQuery({
+  args: {
+    packages: v.array(
+      v.object({
+        name: v.string(),
+        version: v.string(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    if (args.packages.length > PACKAGE_CATEGORY_BATCH_LIMIT) {
+      throw new ConvexError(
+        `Package category batches are limited to ${PACKAGE_CATEGORY_BATCH_LIMIT} packages`,
+      );
+    }
+    const identityKey = (identity: { name: string; version: string }) =>
+      JSON.stringify([identity.name, identity.version]);
+    const uniqueIdentities = [
+      ...new Map(args.packages.map((identity) => [identityKey(identity), identity])).values(),
+    ];
+    const resolved = await Promise.all(
+      uniqueIdentities.map(async (identity) => {
+        const pkg = await getReadablePackageByName(ctx, identity.name, undefined);
+        if (!pkg || (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin")) {
+          return [identityKey(identity), null] as const;
+        }
+        const release = await ctx.db
+          .query("packageReleases")
+          .withIndex("by_package_version", (q) =>
+            q.eq("packageId", pkg._id).eq("version", identity.version),
+          )
+          .unique();
+        return [
+          identityKey(identity),
+          isPublishedPackageRelease(release) && release.pluginManifestSummary?.categories
+            ? [...release.pluginManifestSummary.categories]
+            : null,
+        ] as const;
+      }),
+    );
+    const categoriesByIdentity = new Map(resolved);
+
+    return args.packages.map((identity) => ({
+      ...identity,
+      categories: categoriesByIdentity.get(identityKey(identity)) ?? null,
+    }));
   },
 });
 
@@ -4195,6 +4293,20 @@ export const listPageForViewerInternal = internalQuery({
   },
 });
 
+export const listPluginOverviewCategoryInternal = internalQuery({
+  args: {
+    category: v.string(),
+    numItems: v.number(),
+  },
+  handler: async (ctx, args) => {
+    if (!isPluginCategorySlug(args.category)) return [];
+    return await listPluginOverviewCategory(ctx, {
+      category: args.category,
+      numItems: args.numItems,
+    });
+  },
+});
+
 export const countPublicPluginsInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
@@ -4227,12 +4339,17 @@ export const countPublicPlugins = query({
   },
 });
 
+type PackageDiscoverySortable = Pick<
+  PackageDigestLike,
+  "stats" | "recommendedScore" | "createdAt" | "updatedAt" | "family" | "name"
+>;
+
 function compareStablePackageDiscoveryCandidates(
-  a: PackageDigestLike,
-  b: PackageDigestLike,
+  a: PackageDiscoverySortable,
+  b: PackageDiscoverySortable,
   sort: "updated" | "created" | "downloads" | "recommended" | "installs",
 ) {
-  const metric = (candidate: PackageDigestLike) => {
+  const metric = (candidate: PackageDiscoverySortable) => {
     if (sort === "downloads") return candidate.stats?.downloads ?? 0;
     if (sort === "installs") return candidate.stats?.installs ?? 0;
     if (sort === "recommended") return candidate.recommendedScore ?? 0;
@@ -4396,8 +4513,8 @@ async function listPackagePageImpl(
   if (args.channel === "private" && !args.viewerUserId) {
     return { page: [], isDone: true, continueCursor: "" };
   }
-  if (args.families?.length && !args.highlightedOnly) {
-    throw new Error("families is only supported for highlighted package pages");
+  if (args.families?.length && !args.highlightedOnly && args.sort !== "trending") {
+    throw new Error("families is only supported for highlighted or trending package pages");
   }
   if (args.category && !isPluginCategorySlug(args.category)) {
     return { page: [], isDone: true, continueCursor: "" };
@@ -4771,15 +4888,24 @@ async function listOfficialFirstPackageCategoryPage(
   const collected: PublicPackageListItem[] = [];
 
   if (state.phase === "official") {
-    const officialPage = await listPackagePageImpl(ctx, {
-      ...args,
-      officialFirst: false,
-      isOfficial: true,
-      paginationOpts: {
-        cursor: state.cursor,
-        numItems: targetCount,
-      },
-    });
+    const officialPage =
+      // Digest cursors resume through the family-scoped category reader below.
+      // Family-less reads use stable multi-family cursors and must stay on that path.
+      !args.highlightedOnly && args.family !== undefined && state.cursor === null
+        ? await takeVisiblePackageCategoryDigestPage(ctx, {
+            ...args,
+            isOfficial: true,
+            numItems: targetCount,
+          })
+        : await listPackagePageImpl(ctx, {
+            ...args,
+            officialFirst: false,
+            isOfficial: true,
+            paginationOpts: {
+              cursor: state.cursor,
+              numItems: targetCount,
+            },
+          });
     collected.push(...officialPage.page);
     if (!officialPage.isDone) {
       return {
@@ -4819,21 +4945,22 @@ async function listOfficialFirstPackageCategoryPage(
           : "",
       };
     }
-    const communityPage = args.highlightedOnly
-      ? await listPackagePageImpl(ctx, {
-          ...args,
-          officialFirst: false,
-          isOfficial: false,
-          paginationOpts: {
-            cursor: null,
+    const communityPage =
+      args.highlightedOnly || args.family === undefined
+        ? await listPackagePageImpl(ctx, {
+            ...args,
+            officialFirst: false,
+            isOfficial: false,
+            paginationOpts: {
+              cursor: null,
+              numItems: targetCount - collected.length,
+            },
+          })
+        : await takeVisiblePackageCategoryDigestPage(ctx, {
+            ...args,
+            isOfficial: false,
             numItems: targetCount - collected.length,
-          },
-        })
-      : await takeVisiblePackageCategoryDigestPage(ctx, {
-          ...args,
-          isOfficial: false,
-          numItems: targetCount - collected.length,
-        });
+          });
     collected.push(...communityPage.page);
     return {
       page: collected,
@@ -8826,7 +8953,6 @@ async function publishPackageImpl(
     );
   }
   const validatedClaw = clawPackage?.ok ? clawPackage.value : undefined;
-  const icon = family === "claw" ? undefined : normalizePluginManifestIcon(pluginManifest);
   if (family === "code-plugin") {
     const validation = validateOpenClawExternalCodePluginPackageContents(
       packageJson,
@@ -8894,14 +9020,24 @@ async function publishPackageImpl(
       readmeText: readmeEntry?.text ?? null,
     });
   let categories: string[];
+  let categoryClassification: PluginCategoryClassification | undefined;
   let normalizedTopics: string[];
   try {
-    const declaredCategories =
-      payload.categories ?? normalizeStoredPluginCategoryOverride(existingPackage?.categories);
-    categories =
-      family === "claw"
-        ? (declaredCategories ?? [])
-        : resolvePluginCategories({ declared: declaredCategories });
+    if (family === "code-plugin" || family === "bundle-plugin") {
+      const assignment = await classifyPluginCategories({
+        name,
+        pluginManifest,
+        packageJson,
+        bundleManifest,
+        documentation: readmeEntry?.text,
+      });
+      categories = assignment.categories;
+      categoryClassification = assignment.classification;
+    } else {
+      const declaredCategories =
+        payload.categories ?? normalizeStoredPluginCategoryOverride(existingPackage?.categories);
+      categories = declaredCategories ?? [];
+    }
     normalizedTopics = normalizeCatalogTopics(payload.topics ?? existingPackage?.topics);
   } catch (error) {
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
@@ -8947,22 +9083,33 @@ async function publishPackageImpl(
         scanStatus: initialScanStatus,
       }
     : undefined;
+  const icon =
+    family === "claw"
+      ? undefined
+      : await resolvePackageIcon(ctx, {
+          files,
+          ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
+        });
   const integritySha256 = await hashSkillFiles(
     files.map((file) => ({ path: file.path, sha256: file.sha256 })),
   );
   const pluginManifestSummary =
     family === "claw"
       ? undefined
-      : derivePluginManifestSummary({
-          pluginManifest:
-            pluginManifest ??
-            (() => {
-              throw new ConvexError("openclaw.plugin.json is required for plugin packages");
-            })(),
-          ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
-          compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
-          files: await withSkillMarkdownTextsForManifestSummary(ctx, files),
-        });
+      : {
+          ...derivePluginManifestSummary({
+            pluginManifest:
+              pluginManifest ??
+              (() => {
+                throw new ConvexError("openclaw.plugin.json is required for plugin packages");
+              })(),
+            ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
+            compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
+            ...(family === "code-plugin" || family === "bundle-plugin" ? { categories } : {}),
+            files: await withSkillMarkdownTextsForManifestSummary(ctx, files),
+          }),
+          ...(icon ? { icon } : {}),
+        };
 
   const legacyZipStorageId =
     payload.artifact?.kind === "npm-pack"
@@ -9021,6 +9168,7 @@ async function publishPackageImpl(
     extractedPluginManifest: storedPluginManifest,
     normalizedBundleManifest: family === "bundle-plugin" ? storedBundleManifest : undefined,
     pluginManifestSummary,
+    categoryClassification,
     clawManifestSummary: validatedClaw?.summary,
     source: effectiveSource,
     trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
@@ -10258,10 +10406,20 @@ export const setPackageCatalogMetadata = mutation({
       allowPlatformModerator: true,
     });
 
-    let normalizedCategories: string[];
     let normalizedTopics: string[];
     try {
-      normalizedCategories = resolvePluginCategories({ declared: args.categories });
+      if (args.categories !== undefined) {
+        const echoedCategories = resolvePluginCategories({ declared: args.categories });
+        const currentCategories = resolvePluginCategories({ declared: pkg.categories });
+        if (
+          echoedCategories.length !== currentCategories.length ||
+          echoedCategories.some((category, index) => category !== currentCategories[index])
+        ) {
+          throw new Error(
+            "Plugin categories come from openclaw.plugin.json; publish a new version to change them",
+          );
+        }
+      }
       normalizedTopics = normalizeCatalogTopics(args.topics);
     } catch (error) {
       throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
@@ -10270,33 +10428,19 @@ export const setPackageCatalogMetadata = mutation({
     const now = Date.now();
     const nextPackage = {
       ...pkg,
-      categories: normalizedCategories,
       topics: normalizedTopics.length ? normalizedTopics : undefined,
-      inferredCategories: undefined,
       inferredTopics: undefined,
-      inferredFromReleaseId: undefined,
-      inferredCategoryConfidence: undefined,
       inferredTopicConfidence: undefined,
-      inferredClassifierVersion: undefined,
       inferredTopicClassifierVersion: undefined,
-      inferredInputHash: undefined,
       inferredTopicInputHash: undefined,
-      inferredAt: undefined,
       updatedAt: now,
     };
     await ctx.db.patch(pkg._id, {
-      categories: nextPackage.categories,
       topics: nextPackage.topics,
-      inferredCategories: nextPackage.inferredCategories,
       inferredTopics: nextPackage.inferredTopics,
-      inferredFromReleaseId: nextPackage.inferredFromReleaseId,
-      inferredCategoryConfidence: nextPackage.inferredCategoryConfidence,
       inferredTopicConfidence: nextPackage.inferredTopicConfidence,
-      inferredClassifierVersion: nextPackage.inferredClassifierVersion,
       inferredTopicClassifierVersion: nextPackage.inferredTopicClassifierVersion,
-      inferredInputHash: nextPackage.inferredInputHash,
       inferredTopicInputHash: nextPackage.inferredTopicInputHash,
-      inferredAt: nextPackage.inferredAt,
       updatedAt: now,
     });
     const owner = await getOwnerPublisher(ctx, {
@@ -11568,6 +11712,7 @@ export const insertReleaseInternal = internalMutation({
     extractedPluginManifest: v.optional(v.any()),
     normalizedBundleManifest: v.optional(v.any()),
     pluginManifestSummary: v.optional(v.any()),
+    categoryClassification: v.optional(pluginCategoryClassificationValidator),
     clawManifestSummary: v.optional(v.any()),
     source: v.optional(v.any()),
     trustedPublishTokenId: v.optional(v.id("packagePublishTokens")),
@@ -11882,6 +12027,7 @@ export const insertReleaseInternal = internalMutation({
       extractedPluginManifest: args.extractedPluginManifest,
       normalizedBundleManifest: args.normalizedBundleManifest,
       pluginManifestSummary: args.pluginManifestSummary,
+      categoryClassification: args.categoryClassification,
       clawManifestSummary: args.clawManifestSummary,
       compatibility: args.compatibility,
       runtimeId: args.runtimeId,

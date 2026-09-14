@@ -1,5 +1,6 @@
 import { type inferred } from "arktype";
 export declare const PACKAGE_TRENDING_LEADERBOARD_LIMIT = 200;
+export declare const PACKAGE_CATEGORY_BATCH_LIMIT = 200;
 export declare function normalizePackageOwnerHandle(handle: string | null | undefined): string | undefined;
 export declare function inferPackageNameScope(name: string): string | undefined;
 export declare function getPackageScopeOwnerMismatch(name: string, ownerHandle: string | null | undefined): {
@@ -27,6 +28,7 @@ export declare const PackageCompatibilitySchema: import("arktype/internal/varian
 export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred];
 export declare const PluginManifestSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     schemaVersion: number;
+    categories?: string[] | undefined;
     icon?: string | undefined;
     compatibility?: {
         pluginApiRange?: string | undefined;
@@ -59,6 +61,21 @@ export declare const PluginManifestSummarySchema: import("arktype/internal/varia
     }[];
 }, {}>;
 export type PluginManifestSummary = (typeof PluginManifestSummarySchema)[inferred];
+export declare const ApiV1PackageCategoriesBatchRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    packages: {
+        name: string;
+        version: string;
+    }[];
+}, {}>;
+export type ApiV1PackageCategoriesBatchRequest = (typeof ApiV1PackageCategoriesBatchRequestSchema)[inferred];
+export declare const ApiV1PackageCategoriesBatchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    packages: {
+        name: string;
+        version: string;
+        categories: string[] | null;
+    }[];
+}, {}>;
+export type ApiV1PackageCategoriesBatchResponse = (typeof ApiV1PackageCategoriesBatchResponseSchema)[inferred];
 export declare const PackageVerificationSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     tier: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural";
     scope: "artifact-only" | "dependency-graph-aware";
@@ -381,6 +398,7 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     summary?: string | null | undefined;
     icon?: string | null | undefined;
     ownerHandle?: string | null | undefined;
+    ownerOfficial?: boolean | undefined;
     createdAt: number;
     updatedAt: number;
     latestVersion?: string | null | undefined;
@@ -396,6 +414,75 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     } | undefined;
 }, {}>;
 export type PackageListItem = (typeof PackageListItemSchema)[inferred];
+export declare const PluginOverviewItemSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    name: string;
+    displayName: string;
+    family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+    runtimeId?: string | null | undefined;
+    channel: "community" | "official" | "private";
+    isOfficial: boolean;
+    summary?: string | null | undefined;
+    icon?: string | null | undefined;
+    ownerHandle?: string | null | undefined;
+    ownerOfficial?: boolean | undefined;
+    createdAt: number;
+    updatedAt: number;
+    latestVersion?: string | null | undefined;
+    categories?: string[] | undefined;
+    topics?: string[] | undefined;
+    featuredAt?: number | undefined;
+    verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
+    stats?: {
+        downloads: number;
+        installs: number;
+        stars: number;
+        versions: number;
+    } | undefined;
+    featured?: boolean | undefined;
+    featuredRank?: number | undefined;
+    trending?: boolean | undefined;
+    trendingRank?: number | undefined;
+}, {}>;
+export type PluginOverviewItem = (typeof PluginOverviewItemSchema)[inferred];
+export declare const ApiV1PluginOverviewResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    categories: {
+        slug: string;
+        label: string;
+        description: string;
+        icon: string;
+        order: number;
+    }[];
+    items: {
+        name: string;
+        displayName: string;
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        runtimeId?: string | null | undefined;
+        channel: "community" | "official" | "private";
+        isOfficial: boolean;
+        summary?: string | null | undefined;
+        icon?: string | null | undefined;
+        ownerHandle?: string | null | undefined;
+        ownerOfficial?: boolean | undefined;
+        createdAt: number;
+        updatedAt: number;
+        latestVersion?: string | null | undefined;
+        categories?: string[] | undefined;
+        topics?: string[] | undefined;
+        featuredAt?: number | undefined;
+        verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
+        stats?: {
+            downloads: number;
+            installs: number;
+            stars: number;
+            versions: number;
+        } | undefined;
+        featured?: boolean | undefined;
+        featuredRank?: number | undefined;
+        trending?: boolean | undefined;
+        trendingRank?: number | undefined;
+    }[];
+}, {}>;
+export type ApiV1PluginOverviewResponse = (typeof ApiV1PluginOverviewResponseSchema)[inferred];
 export declare const ApiV1PackageListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {
         name: string;
@@ -407,6 +494,7 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         summary?: string | null | undefined;
         icon?: string | null | undefined;
         ownerHandle?: string | null | undefined;
+        ownerOfficial?: boolean | undefined;
         createdAt: number;
         updatedAt: number;
         latestVersion?: string | null | undefined;
@@ -509,6 +597,7 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             summary?: string | null | undefined;
             icon?: string | null | undefined;
             ownerHandle?: string | null | undefined;
+            ownerOfficial?: boolean | undefined;
             createdAt: number;
             updatedAt: number;
             latestVersion?: string | null | undefined;
@@ -551,6 +640,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
         } | null | undefined;
         pluginManifestSummary?: {
             schemaVersion: number;
+            categories?: string[] | undefined;
             icon?: string | undefined;
             compatibility?: {
                 pluginApiRange?: string | undefined;
@@ -656,6 +746,7 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
         } | null | undefined;
         pluginManifestSummary?: {
             schemaVersion: number;
+            categories?: string[] | undefined;
             icon?: string | undefined;
             compatibility?: {
                 pluginApiRange?: string | undefined;
@@ -1295,6 +1386,23 @@ export declare const PackagePublishAttemptStatusSchema: import("arktype/internal
 export type PackagePublishAttemptStatus = (typeof PackagePublishAttemptStatusSchema)[inferred];
 export declare const PackagePublicationStatusSchema: import("arktype/internal/variants/string.ts").StringType<"blocked" | "expired" | "failed" | "pending" | "published", {}>;
 export type PackagePublicationStatus = (typeof PackagePublicationStatusSchema)[inferred];
+export declare const ApiV1PackagePublishRecoveryRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    manualOverrideReason: string;
+}, {}>;
+export type ApiV1PackagePublishRecoveryRequest = (typeof ApiV1PackagePublishRecoveryRequestSchema)[inferred];
+export declare const ApiV1PackagePublishRecoveryResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    attemptId: string;
+    recoveredFromAttemptId: string;
+    packageId: string;
+    releaseId: string;
+    name: string;
+    version: string;
+    status: "blocked" | "expired" | "failed" | "finalized" | "finalizing" | "pending_checks" | "ready_to_finalize";
+    publicationStatus: "blocked" | "expired" | "failed" | "pending" | "published";
+    reused: boolean;
+}, {}>;
+export type ApiV1PackagePublishRecoveryResponse = (typeof ApiV1PackagePublishRecoveryResponseSchema)[inferred];
 export declare const PackagePublishAttemptCheckSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     status: "blocked" | "clean" | "failed" | "pending";
     summary?: string | undefined;

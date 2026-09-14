@@ -2,6 +2,11 @@
 import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
 import { gzipSync, strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Route behavior assumes verified ingress; trust validation is covered by httpRateLimit.edge.test.ts.
+vi.mock("./lib/verifiedClientIp", () => ({
+  getVerifiedClientIp: async () => "203.0.113.1",
+}));
 import { api, internal } from "./_generated/api";
 import { RATE_LIMITS } from "./lib/httpRateLimit";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
@@ -339,6 +344,83 @@ beforeEach(() => {
 });
 
 describe("httpApiV1 handlers", () => {
+  it("returns exact-version categories in request order", async () => {
+    const requested = [
+      { name: "@openclaw/whatsapp", version: "1.2.3" },
+      { name: "@openclaw/missing", version: "9.9.9" },
+      { name: "@openclaw/whatsapp", version: "1.2.3" },
+    ];
+    const runQuery = vi.fn(async () => [
+      { ...requested[0], categories: ["channels"] },
+      { ...requested[1], categories: null },
+      { ...requested[2], categories: ["channels"] },
+    ]);
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/categories:batch", {
+        method: "POST",
+        body: JSON.stringify({ packages: requested }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      packages: [
+        { ...requested[0], categories: ["channels"] },
+        { ...requested[1], categories: null },
+        { ...requested[2], categories: ["channels"] },
+      ],
+    });
+    expect(runQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["rejects malformed batch bodies", { packages: "not-an-array" }, "payload"],
+    [
+      "rejects blank exact-version identities",
+      { packages: [{ name: " ", version: "1.2.3" }] },
+      "non-empty",
+    ],
+    [
+      "caps exact-version category batches at 200 packages",
+      {
+        packages: Array.from({ length: 201 }, (_, index) => ({
+          name: `@openclaw/plugin-${index}`,
+          version: "1.0.0",
+        })),
+      },
+      "200",
+    ],
+  ])("%s", async (_name, body, expectedMessage) => {
+    const runQuery = vi.fn();
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/categories:batch", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain(expectedMessage);
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it("returns 500 when exact-version category lookup fails internally", async () => {
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn().mockRejectedValue(new Error("database unavailable")) }),
+      new Request("https://example.com/api/v1/packages/categories:batch", {
+        method: "POST",
+        body: JSON.stringify({
+          packages: [{ name: "@openclaw/whatsapp", version: "1.2.3" }],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.text()).toBe("Internal Server Error");
+  });
+
   it("rejects local scan upload submissions with scan-download guidance", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:owner",
@@ -7242,6 +7324,14 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns a skill verification envelope with card and security metadata", async () => {
+    const scannerReports = {
+      aig: { version: "2.1.0", runs: [], vendorExtension: { preserved: true } },
+      skillspector: {
+        risk_assessment: { score: 0, recommendation: "CAUTION" },
+        analysis_completeness: { is_complete: false, coverage_percent: 99.1 },
+        vendorExtension: { text: "full scanner evidence ".repeat(30_000) },
+      },
+    };
     const internalVersion = {
       _id: "skillVersions:1",
       skillId: "skills:1",
@@ -7249,6 +7339,7 @@ describe("httpApiV1 handlers", () => {
       createdAt: 1,
       changelog: "c",
       fingerprint: "source-fingerprint",
+      scannerReportsStorageId: "storage:scanner-reports",
       files: [
         {
           path: "SKILL.md",
@@ -7307,6 +7398,7 @@ describe("httpApiV1 handlers", () => {
         checkedAt: 9,
       },
       depRegistryScanStatus: "suspicious",
+      aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: 3 },
       skillSpectorAnalysis: {
         status: "clean",
         score: 0,
@@ -7316,7 +7408,7 @@ describe("httpApiV1 handlers", () => {
         issues: [],
         scannerVersion: "skillspector-test",
         summary: "SkillSpector clean.",
-        checkedAt: 5,
+        checkedAt: 3,
       },
       capabilityTags: ["dev-tools"],
       softDeletedAt: undefined,
@@ -7351,7 +7443,13 @@ describe("httpApiV1 handlers", () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: {
+          get: vi.fn(async () => new Blob([JSON.stringify({ checkedAt: 3, ...scannerReports })])),
+        },
+      }),
       new Request("https://example.com/api/v1/skills/demo/verify?ownerHandle=acme&tag=stable"),
     );
 
@@ -7403,28 +7501,14 @@ describe("httpApiV1 handlers", () => {
         summary: "ClawScan clean.",
         model: "gpt-test",
         checkedAt: 3,
-        signals: {
-          staticScan: { status: "clean", rawStatus: "clean", reasonCodes: [] },
-          virusTotal: {
-            status: "clean",
-            rawStatus: "clean",
-            verdict: "clean",
-            source: "engines",
-          },
-          skillSpector: {
-            status: "clean",
-            rawStatus: "clean",
-            score: 0,
-            recommendation: "INSTALL",
-            issueCount: 0,
-          },
-          dependencyRegistry: null,
-        },
       },
       signature: { status: "unsigned" },
     });
     expect(json.skill).toBeUndefined();
     expect(json.publisher).toBeUndefined();
+    expect(json.security).not.toHaveProperty("signals");
+    expect(json).not.toHaveProperty("scannerReports");
+    expect(json.security.scannerReports).toEqual(scannerReports);
   });
 
   it("does not let publisher-supplied skill-card.md satisfy verification", async () => {
@@ -7651,10 +7735,7 @@ describe("httpApiV1 handlers", () => {
       passed: true,
       rawStatus: "clean",
       verdict: "benign",
-      signals: {
-        staticScan: { status: "malicious", rawStatus: "malicious" },
-        dependencyRegistry: null,
-      },
+      scannerReports: { aig: null, skillspector: null },
     });
   });
 
@@ -9478,6 +9559,125 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("bulk package rescan batch requires admin role", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("should not enqueue");
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/scan/batch", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ batchSize: 25 }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.text()).resolves.toBe("Admin role required.");
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("bulk package rescan batch enqueues via admin API", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        mode: "all-active-latest",
+        queued: 2,
+        alreadyQueued: 1,
+        skipped: 0,
+        jobIds: ["securityScanJobs:1", "securityScanJobs:2", "securityScanJobs:3"],
+        nextCursor: "cursor-2",
+        done: false,
+        sampleNames: ["demo"],
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/scan/batch", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ batchSize: 25, cursor: null, dryRun: false }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      queued: 2,
+      alreadyQueued: 1,
+      nextCursor: "cursor-2",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { securityScan: Record<string, unknown> }).securityScan
+        .enqueueBulkPackageRescanBatchForAdminInternal,
+      {
+        actorUserId: "users:admin",
+        cursor: null,
+        batchSize: 25,
+        dryRun: false,
+      },
+    );
+  });
+
+  it("bulk package rescan status aggregates via admin API", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        total: 2,
+        queued: 0,
+        running: 1,
+        succeeded: 1,
+        failed: 0,
+        missing: 0,
+        terminal: 1,
+        done: false,
+        failedJobIds: [],
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/-/scan/batch/status", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ jobIds: ["securityScanJobs:1", "securityScanJobs:2"] }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      total: 2,
+      running: 1,
+      done: false,
+    });
+    expect(runQuery).toHaveBeenCalledWith(
+      (internal as unknown as { securityScan: Record<string, unknown> }).securityScan
+        .getBulkPackageRescanBatchStatusForAdminInternal,
+      {
+        actorUserId: "users:admin",
+        jobIds: ["securityScanJobs:1", "securityScanJobs:2"],
+      },
+    );
+  });
+
   it("VT pending repair requires admin role", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:moderator",
@@ -10759,6 +10959,131 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("plugin overview returns one cacheable bounded home-page payload", async () => {
+    const featured = {
+      ...makeCatalogItem("featured-plugin", {
+        family: "code-plugin",
+        updatedAt: 300,
+      }),
+      categories: ["channels"],
+    };
+    const trending = {
+      ...makeCatalogItem("trending-plugin", {
+        family: "bundle-plugin",
+        updatedAt: 200,
+      }),
+      categories: ["models"],
+    };
+    const category = {
+      ...makeCatalogItem("category-plugin", {
+        family: "code-plugin",
+        updatedAt: 100,
+      }),
+      categories: [],
+    };
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.category) {
+        return args.category === "channels" ? [category] : [];
+      }
+      const page = args.highlightedOnly
+        ? [featured]
+        : args.sort === "trending"
+          ? [trending]
+          : args.category === "channels"
+            ? [category]
+            : [];
+      return { page, isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginOverviewV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins/overview"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toContain("s-maxage=300");
+    const payload = await response.json();
+    expect(payload.categories).toEqual(
+      expect.arrayContaining([expect.objectContaining({ slug: "channels", order: 0 })]),
+    );
+    expect(payload.items).toEqual([
+      expect.objectContaining({ name: "featured-plugin", featured: true }),
+      expect.objectContaining({ name: "trending-plugin", trending: true }),
+      expect.objectContaining({ name: "category-plugin", categories: ["channels"] }),
+    ]);
+    expect(runQuery).toHaveBeenCalledTimes(payload.categories.length + 2);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        families: ["code-plugin", "bundle-plugin"],
+        highlightedOnly: true,
+        paginationOpts: { cursor: null, numItems: 8 },
+      }),
+    );
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        families: ["code-plugin", "bundle-plugin"],
+        sort: "trending",
+        paginationOpts: { cursor: null, numItems: 8 },
+      }),
+    );
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        category: "channels",
+        numItems: 8,
+      }),
+    );
+    const categoryCall = runQuery.mock.calls.find(
+      ([, args]) => (args as { category?: string }).category === "channels",
+    );
+    expect(categoryCall?.[1]).not.toHaveProperty("families");
+    expect(categoryCall?.[1]).not.toHaveProperty("paginationOpts");
+  });
+
+  it("plugin overview preserves independent ranks for overlapping shelves", async () => {
+    const shared = makeCatalogItem("shared-plugin", {
+      family: "code-plugin",
+      updatedAt: 300,
+    });
+    const trendingFirst = makeCatalogItem("trending-first", {
+      family: "code-plugin",
+      updatedAt: 200,
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.category) return [];
+      const page = args.highlightedOnly
+        ? [shared]
+        : args.sort === "trending"
+          ? [trendingFirst, shared]
+          : [];
+      return { page, isDone: true, continueCursor: "" };
+    });
+
+    const response = await __handlers.listPluginOverviewV1Handler(
+      makeCtx({ runQuery, runMutation: vi.fn().mockResolvedValue(okRate()) }),
+      new Request("https://example.com/api/v1/plugins/overview"),
+    );
+
+    const payload = await response.json();
+    expect(payload.items).toEqual([
+      expect.objectContaining({
+        name: "shared-plugin",
+        featured: true,
+        featuredRank: 0,
+        trending: true,
+        trendingRank: 1,
+      }),
+      expect.objectContaining({
+        name: "trending-first",
+        trending: true,
+        trendingRank: 0,
+      }),
+    ]);
+  });
+
   it("packages list forwards topics to both unified catalog sources", async () => {
     const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -12000,15 +12325,25 @@ describe("httpApiV1 handlers", () => {
     expect(json.categories.map((category: { slug: string }) => category.slug)).toEqual([
       "channels",
       "models",
+      "agent-runtimes",
       "memory",
       "context",
       "voice",
-      "media",
       "web",
-      "tools",
-      "runtime",
-      "gateway",
+      "media",
       "security",
+      "integrations",
+      "developer-tools",
+      "infrastructure",
+      "documents-files",
+      "inbox-collaboration",
+      "productivity",
+      "scheduling",
+      "finance-payments",
+      "sales-marketing",
+      "data-analytics",
+      "agent-orchestration",
+      "research",
       "other",
     ]);
     expect(json.categories).toEqual(
@@ -17169,7 +17504,7 @@ describe("httpApiV1 handlers", () => {
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        key: "ip:unknown:trustedPublish",
+        key: "ip:203.0.113.1:trustedPublish",
         name: "trustedPublishIp",
         config: expect.objectContaining({ rate: RATE_LIMITS.trustedPublish.ip }),
       }),

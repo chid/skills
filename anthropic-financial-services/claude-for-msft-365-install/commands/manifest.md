@@ -4,8 +4,11 @@ description: Generate the add-in manifest XML with your cloud config baked in
 
 # Generate add-in manifest
 
-The script fetches the canonical manifest and appends your config as URL query
-parameters. The add-in reads them at startup. Outlook uses a separate template
+The script fetches the canonical manifest and appends your config to the
+taskpane URL. Sensitive settings (`gateway_token`, `azure_api_key`,
+`google_client_secret`, `otlp_headers`, `inference_headers`, `mcp_servers`) go
+after `#`; other settings are query parameters. Regenerate and redeploy
+manifests built with earlier versions. Outlook uses a separate template
 because Microsoft's `MailApp` schema is distinct from the `TaskPaneApp` schema
 Excel/Word/PowerPoint share, so ask which apps they're deploying and generate
 one file per host.
@@ -341,9 +344,10 @@ array of allow/deny statements that gates add-in features:
 
 - **No `resource`** — the statement applies everywhere, exactly like a
   `disabled_features` entry (off for everyone).
-- **With a `resource`** — the rule is scoped to matching documents, today
-  identified by Purview sensitivity label (block the add-in entirely on
-  top-secret documents, or refuse attaching restricted Office/PDF files).
+- **With a `resource`** — the rule is scoped to matching documents, identified
+  by Purview sensitivity label or, for the open document, by file path (block
+  the add-in entirely on top-secret documents or on a restricted network share,
+  or refuse attaching restricted Office/PDF files).
 
 It covers everything `disabled_features` does, plus conditions, allowlists, and
 per-statement attribution. Building one usually means fetching label GUIDs

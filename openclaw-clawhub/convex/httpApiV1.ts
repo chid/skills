@@ -7,6 +7,7 @@ import {
 } from "./httpApiV1/catalogFeedV1";
 import { contentRightsV1Handler } from "./httpApiV1/contentRightsV1";
 import { verifyDocsSessionV1Handler } from "./httpApiV1/docsSessionV1";
+import { featuredV1Handler } from "./httpApiV1/featuredV1";
 import { recoverPackagePublishAttemptV1Handler } from "./httpApiV1/packagePublishRecoveryV1";
 import {
   exportPluginsV1Handler,
@@ -32,6 +33,8 @@ import {
   promotionsPostRouterV1Handler,
 } from "./httpApiV1/promotionsV1";
 import { createPublisherV1Handler } from "./httpApiV1/publishersV1";
+import { searchInsightsV1Handler } from "./httpApiV1/searchInsightsV1";
+import { searchReportsV1Handler } from "./httpApiV1/searchReportsV1";
 import {
   skillsShCatalogPublicV1Handler,
   skillsShCatalogTestV1Handler,
@@ -43,6 +46,7 @@ import {
   resolveSkillVersionV1Handler,
   searchSkillsV1Handler,
   skillScanBatchStatusV1Handler,
+  skillScanJobHistoryV1Handler,
   skillScanBatchSubmitV1Handler,
   skillScanGetRouterV1Handler,
   skillScanSubmitV1Handler,
@@ -61,6 +65,9 @@ import {
   usersPostRouterV1Handler,
 } from "./httpApiV1/usersV1";
 import { whoamiV1Handler } from "./httpApiV1/whoamiV1";
+
+export const searchReportsV1Http = httpAction(searchReportsV1Handler);
+export const searchInsightsV1Http = httpAction(searchInsightsV1Handler);
 
 export const listPackagesV1Http = httpAction(listPackagesV1Handler);
 export const listPluginsV1Http = httpAction(listPluginsV1Handler);
@@ -97,6 +104,7 @@ export const skillSecurityVerdictsV1Http = httpAction(skillSecurityVerdictsV1Han
 export const skillScanSubmitV1Http = httpAction(skillScanSubmitV1Handler);
 export const skillScanGetRouterV1Http = httpAction(skillScanGetRouterV1Handler);
 export const skillScanBatchSubmitV1Http = httpAction(skillScanBatchSubmitV1Handler);
+export const skillScanJobHistoryV1Http = httpAction(skillScanJobHistoryV1Handler);
 export const skillScanBatchStatusV1Http = httpAction(skillScanBatchStatusV1Handler);
 export const skillsPostRouterV1Http = httpAction(skillsPostRouterV1Handler);
 export const skillsDeleteRouterV1Http = httpAction(skillsDeleteRouterV1Handler);
@@ -110,6 +118,8 @@ export const listPromotionsV1Http = httpAction(listPromotionsV1Handler);
 export const promotionsGetRouterV1Http = httpAction(promotionsGetRouterV1Handler);
 export const createPromotionV1Http = httpAction(createPromotionV1Handler);
 export const promotionsPostRouterV1Http = httpAction(promotionsPostRouterV1Handler);
+
+export const featuredV1Http = httpAction(featuredV1Handler);
 
 export const whoamiV1Http = httpAction(whoamiV1Handler);
 export const usersGetRouterV1Http = httpAction(usersGetRouterV1Handler);
@@ -152,6 +162,7 @@ export const __handlers = {
   skillScanGetRouterV1Handler,
   skillScanBatchSubmitV1Handler,
   skillScanBatchStatusV1Handler,
+  skillScanJobHistoryV1Handler,
   skillsPostRouterV1Handler,
   skillsDeleteRouterV1Handler,
   exportSkillsV1Handler,

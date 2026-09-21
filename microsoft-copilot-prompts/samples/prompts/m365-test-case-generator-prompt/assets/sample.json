@@ -1,0 +1,41 @@
+[
+  {
+    "name": "copilotprompts-prompt-m365-test-case-generator-prompt",
+    "source": "pnp",
+    "title": "Test Case Generator",
+    "shortDescription": "Generate a structured, QA-ready set of functional, negative, edge, and traceability-focused test cases from a feature description or user story.",
+    "url": "https://github.com/pnp/copilot-prompts/tree/main/samples/prompts/m365-test-case-generator-prompt",
+    "downloadUrl": "https://pnp.github.io/download-partial/?url=https://github.com/pnp/copilot-prompts/tree/main/samples/prompts/m365-test-case-generator-prompt",
+    "longDescription": [
+      "The Test Case Generator prompt automatically converts any feature description, requirement, or user story into a complete set of structured test cases. It helps QA engineers and developers save time by producing consistent, high-quality test scenarios—including positive, negative, edge, and functional cases—without manual effort. This makes it easier to ensure full coverage, improve software quality, and accelerate testing workflows."
+    ],
+    "creationDateTime": "2026-08-27",
+    "updateDateTime": "2026-08-27",
+    "products": [
+      "Microsoft 365 Copilot"
+    ],
+    "metadata": [],
+    "thumbnails": [
+      {
+        "type": "image",
+        "order": 100,
+        "url": "https://github.com/pnp/copilot-prompts/raw/main/samples/prompts/m365-test-case-generator-prompt/assets/demo.png",
+        "alt": "Screenshot of the Test Case Generator prompt being used in Copilot"
+      }
+    ],
+    "authors": [
+      {
+        "gitHubAccount": "imranloon123",
+        "pictureUrl": "https://github.com/imranloon123.png",
+        "name": "Imran Loon"
+      }
+    ],
+    "references": [
+      {
+        "name": "Microsoft 365 Copilot",
+        "description": "Microsoft 365 Copilot",
+        "url": "https://copilot.microsoft.com/"
+      }
+    ]
+  }
+]

@@ -19,15 +19,16 @@ you the same off switch *plus* conditions and effects:
 
 A statement with **no `resource`** is exactly `disabled_features` — so anything
 you'd put there, you can put here. The `resource` is what adds granularity, and its
-`type` is the extension point: today the resource is a document identified by its
-**Microsoft Purview sensitivity label** (`open_file`, `uploaded_file`); further
-resource types plug into the same shape without a new config key. New deployments
-should start here; `disabled_features` remains supported for the simple flat case.
+`type` is the extension point: today the resource is a document (`open_file`,
+`uploaded_file`) identified by its **Microsoft Purview sensitivity label** or, for
+the open document, by its **file path**; further resource types plug into the same
+shape without a new config key. New deployments should start here;
+`disabled_features` remains supported for the simple flat case.
 
-Two label-conditioned controls ship today:
+Two document-conditioned controls ship today:
 
 - **Whether the add-in runs at all on an open document** (the `addin.access` kill
-  switch), keyed off the open document's label.
+  switch), keyed off the open document's label or its path.
 - **Whether a file may be attached as an upload** (`file.upload`), keyed off the
   *attached* file's own label — Office files and PDFs.
 
@@ -35,6 +36,8 @@ Walk the admin through the four steps below, then hand the finished JSON to
 [manifest](manifest.md#access_policies) as one more key.
 
 ## 1. Get the label GUIDs
+
+Skip this step if every rule matches on a file path (step 2) rather than a label.
 
 Statements match on the label's **GUID** (`mip_label_guid`) — stable across
 renames and locales. Have the admin pull their taxonomy once with the Purview
@@ -71,6 +74,21 @@ both. Then substitute their GUIDs.
     "type": "open_file",
     "identifiers": [{ "type": "mip_label_guid", "equals": "<guid>" }],
     "description": "Highly Confidential"
+  }
+}
+```
+
+**Block the add-in on documents in a given location** (for files that can't
+carry a label, such as those on a network share — see the path rule below):
+
+```json
+{
+  "effect": "deny",
+  "action": "addin.access",
+  "resource": {
+    "type": "open_file",
+    "identifiers": [{ "type": "file_path", "startsWith": "//fileserver/restricted/" }],
+    "description": "Restricted share"
   }
 }
 ```
@@ -134,7 +152,7 @@ effect      := "allow" | "deny"
 action      := <slug> | [ <slug>, ... ]          # feature slugs; unknown -> skipped + reported
 resource    := { type, identifiers: [identifier, ...], description? }
 type        := "open_file" | "uploaded_file"    # the extension point
-identifier  := { type: "mip_label_guid" | "mip_label_name", <one operator> }
+identifier  := { type: "mip_label_guid" | "mip_label_name" | "file_path", <one operator> }
 ```
 
 | `action` slug | Gates | Takes a `resource`? |
@@ -150,21 +168,21 @@ have a resource type to scope against.
 
 | Operator | Value | Semantics |
 |---|---|---|
-| `equals` | string | GUID: case-insensitive. Name: exact, case-sensitive |
-| `startsWith` | string | prefix match — `mip_label_name` only (see the parent-label rule) |
+| `equals` | string | GUID: case-insensitive. Name: exact, case-sensitive. Path: see the path rule |
+| `startsWith` | string | prefix match — `mip_label_name` (see the parent-label rule) and `file_path` |
 | `endsWith` | string | suffix match — `mip_label_name` only |
 | `exists` | boolean | presence check — `false` = unlabeled, `true` = any label |
 
 Exactly one operator per identifier; `mip_label_guid` supports only `equals` and
-`exists`. A resource needs at least one identifier — an empty `identifiers`
-array never matches. Statements OR together; identifiers within a resource OR
+`exists`, `file_path` only `equals` and `startsWith`. A resource needs at least
+one identifier — an empty `identifiers` array never matches. Statements OR together; identifiers within a resource OR
 together; a matching `deny` beats a matching `allow`; the first
 `allow` for an `(action, resource type)` flips that scope to default-deny.
 `description` is inert prose (surfaced in UI copy / telemetry, never matched).
 
 ## 3. Rules to explain before they ship it
 
-Tell the admin these five things before they ship; each is a common surprise.
+Tell the admin these six things before they ship; each is a common surprise.
 
 **A statement does exactly what it says — nothing is implied.** Blocking the
 add-in on a label (`addin.access` on `open_file`) does *not* also stop that
@@ -207,6 +225,33 @@ On `uploaded_file` this also matches formats that can't carry a label at all
 (images, CSV, plain text) — say so, so they aren't surprised when a screenshot
 is refused.
 
+**A path rule matches the path exactly as Office reports it.** `file_path`
+compares against the open document's path or URL as the Office host spells it,
+with three normalizations only: ASCII letters are case-folded, `\` and `/` are
+the same separator in Windows paths (`"//fileserver/restricted/"` and
+`"\\\\fileserver\\restricted\\"` are the same prefix — the forward-slash form
+avoids JSON escaping), and a `file:` URL is read as the path it names. Beyond
+that:
+
+- End every prefix with a separator — `//fileserver/restricted` also matches
+  `//fileserver/restricted-archive/`.
+- Nothing resolves aliases. The same share reached through a mapped drive letter,
+  a DFS namespace, or another server name is a different path — add each
+  spelling as another identifier.
+- SharePoint and OneDrive documents report a percent-encoded URL (`%20` for a
+  space); write the prefix encoded the same way. Non-ASCII characters must match
+  exactly.
+- A document with no path — unsaved, or one Office can't report a path for —
+  never matches a `deny`, and is refused under an `allow` list, like an
+  unlabeled document.
+- Only the open document is gated. Uploads have no path, so `file_path` never
+  matches `uploaded_file`. A document saved to a new location is judged by the
+  new path once the pane regains focus.
+- Add-in versions released before `file_path` drop any statement that contains
+  it, so the path rule does not apply on those versions. Keep `file_path`
+  identifiers in their own statements so an older version still applies the
+  label rules.
+
 ## 4. Validate and hand off
 
 Read the finished array back to the admin as a table (effect / action /
@@ -214,8 +259,8 @@ resource / identifiers) before generating anything. Then pass it to
 [manifest](manifest.md#access_policies) as the `access_policies` key. The build
 script rejects a value that isn't valid JSON and warns on each statement that
 doesn't fit the grammar above (bad `effect`, unknown resource / identifier type,
-missing or duplicate operator). Fix every warning now: the add-in reports
-unknown action slugs and an unparseable value, but a statement that fails the
+missing or duplicate operator, a `file_path` on `uploaded_file`). Fix every
+warning now: the add-in reports unknown action slugs and an unparseable value, but a statement that fails the
 grammar is dropped silently — this build-time check is the only catch, and the
 admin would otherwise ship a rule that quietly never applies.
 

@@ -64,11 +64,28 @@ To run one authenticated local browser spec through the same infra:
 bun run test:pw:local-auth -- --project=chromium e2e/local-auth/<spec>.pw.test.ts
 ```
 
-The local-auth runner uses dev auth and a local Convex deployment; it does not
+The local-auth runner supports Linux and macOS and uses dev auth and a local Convex deployment; it does not
 need production credentials or a ClawHub auth token. It starts its own isolated
 local Convex process and temporarily moves aside `.env.local` plus
 `.convex/local/default`, then restores them afterward. Stop any already-running
 local Convex process before running it.
+
+Long or cross-filesystem scratch paths use a short writable ancestor on the workspace filesystem. Short `TMPDIR` overrides on that filesystem are preserved. This keeps module renames on one device and leaves room for Convex's Unix socket paths on macOS.
+
+The runner starts the backend without publishing functions, configures the
+backend environment, and then publishes once. Cron definitions read deployment
+environment variables during publication, so `CLAWHUB_DISABLE_CRONS=1` must be
+set before the first push. Application readiness checks never republish code,
+and no development watcher can push again while the app builds. A persistent
+launcher retains ownership of the backend process group through cleanup.
+
+The disposable backend defaults `FUNRUN_ISOLATE_ACTIVE_THREADS` to `2` before
+bootstrap, limiting simultaneous V8 execution on small runners. Convex pauses
+the user watchdog while a request waits for an execution permit; the one-second
+UDF limit and existing system and admission limits remain unchanged. This reduces
+CPU contention without serializing whole requests or changing production
+configuration. An explicit process-environment override,
+including `0` for the upstream unlimited default, is preserved for diagnosis.
 
 The first push builds the external dependencies for Convex `"use node"` functions
 from their installed package versions. A slow cold npm install can exceed the

@@ -87,8 +87,19 @@ function initialPluginListing({
 }
 
 function renderSkillsListing() {
-  const result = render(<HomeListingSection initialListing={initialPluginListing()} />);
-  fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+  const result = render(
+    <HomeListingSection
+      initialListing={{
+        kind: "skills",
+        tab: "trending",
+        categorySlugs: [],
+        fetchLimit: 20,
+        items: [],
+        hasMore: false,
+        trendingState: "empty",
+      }}
+    />,
+  );
   fireEvent.click(screen.getByRole("tab", { name: "New" }));
   return result;
 }
@@ -196,14 +207,51 @@ describe("HomeListingSection", () => {
   });
 
   it("keeps the initial Skills skeleton iconless", () => {
-    fetchCatalogDiscoveryCapabilitiesMock.mockReturnValue(new Promise(() => {}));
+    convexQueryMock.mockReturnValue(new Promise(() => {}));
 
     render(<HomeListingSection />);
 
+    expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
     const loadingResults = screen.getByRole("status", { name: "Loading results" });
     expect(loadingResults.querySelector(".browse-results-skeleton-icon")).toBeNull();
     expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).toBeNull();
     expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(6);
+  });
+
+  it("counts settled shelf input once while excluding switches, pagination, and repeat whitespace", async () => {
+    convexActionMock.mockResolvedValue(
+      Array.from({ length: 20 }, (_, i) => ({
+        skill: {
+          _id: `skills:${i}`,
+          slug: `result-${i}`,
+          displayName: `Result ${i}`,
+          stats: { downloads: 1 },
+        },
+      })),
+    );
+    renderSkillsListing();
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    const input = screen.getByRole("searchbox", { name: "Search skills" });
+    fireEvent.change(input, { target: { value: "l" } });
+    fireEvent.change(input, { target: { value: "local" } });
+    expect(convexActionMock).not.toHaveBeenCalled();
+    await screen.findByText("Result 0");
+    expect(convexActionMock.mock.calls.filter(([, args]) => args.searchSource)).toHaveLength(1);
+    fireEvent.change(input, { target: { value: "local " } });
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() => expect(convexActionMock).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("tab", { name: "Official" }));
+    await waitFor(() => expect(convexActionMock).toHaveBeenCalledTimes(3));
+    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Development" }));
+    await waitFor(() => expect(convexActionMock).toHaveBeenCalledTimes(4));
+    expect(convexActionMock.mock.calls.filter(([, args]) => args.searchSource)).toHaveLength(1);
+    fireEvent.change(input, { target: { value: "pending" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Featured" }));
+    await waitFor(() => expect(convexActionMock).toHaveBeenCalledTimes(5));
+    expect(convexActionMock.mock.calls.filter(([, args]) => args.searchSource)).toHaveLength(1);
   });
 
   it("searches skills within the selected tab and category", async () => {
@@ -234,6 +282,7 @@ describe("HomeListingSection", () => {
     await waitFor(() => {
       expect(convexActionMock).toHaveBeenCalledWith("search:searchNativeSkills", {
         query: "development",
+        searchSource: "clawhub-web",
         limit: 20,
         highlightedOnly: true,
         categorySlug: "development",

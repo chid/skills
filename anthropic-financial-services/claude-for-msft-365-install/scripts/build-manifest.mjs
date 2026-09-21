@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Fetches the canonical add-in manifest and writes a customized copy with your
-// org's config baked into the taskpane URL as query parameters.
+// org's config baked into the taskpane URL: sensitive settings after #, other settings after ?.
 //
 // Usage: node build-manifest.mjs <office|outlook> <out.xml> key=value [key=value ...]
 // Example: node build-manifest.mjs office acme.xml gcp_project_id=acme gcp_region=us-east5
@@ -15,6 +15,43 @@ const MANIFESTS = {
 // Every URL slot Office reads from must carry the same params. Outlook's MailApp
 // schema repeats Taskpane.Url across V1_0 and V1_1 VersionOverrides, hence /g.
 const URL_SLOTS = [/(<SourceLocation\s+DefaultValue=")([^"]+)(")/g, /(id="Taskpane\.Url"\s+DefaultValue=")([^"]+)(")/g];
+
+// Sensitive settings; emitted in the URL fragment so they aren't part of the request.
+const SENSITIVE_KEYS = new Set([
+  "gateway_token",
+  "azure_api_key",
+  "google_client_secret",
+  "otlp_headers",
+  "inference_headers",
+  "mcp_servers",
+]);
+
+function splitParams(params) {
+  const query = new URLSearchParams();
+  const fragment = new URLSearchParams();
+  for (const [k, v] of params) {
+    if (SENSITIVE_KEYS.has(k)) fragment.set(k, v);
+    else query.set(k, v);
+  }
+  return { query, fragment };
+}
+
+// URLSearchParams joins pairs with `&`; XML attribute values need it escaped.
+function xmlEscape(s) {
+  return s.replaceAll("&", "&amp;");
+}
+
+// `url` is the template's taskpane URL as it appears in the XML (already escaped,
+// already carrying ?m=<tag>), so only the appended parts are escaped here.
+function appendParams(url, { query, fragment }) {
+  if (url.includes("#")) throw new Error(`template URL already has a fragment: ${url}`);
+  let result = url;
+  const qs = query.toString();
+  if (qs) result += (url.includes("?") ? "&amp;" : "?") + xmlEscape(qs);
+  const frag = fragment.toString();
+  if (frag) result += "#" + xmlEscape(frag);
+  return result;
+}
 
 // Recognized config keys. `pattern` is a shape hint — mismatches warn but don't block
 // (your infra may look different). `secret` keys warn louder: the manifest is an
@@ -135,11 +172,12 @@ const EFFECTS = ["allow", "deny"];
 const RESOURCE_TYPES = ["open_file", "uploaded_file"];
 const STRING_OPS = ["equals", "startsWith", "endsWith"];
 // Mirrors the add-in: a GUID supports only equals | exists (a prefix of a GUID is
-// meaningless); a name supports the string operators too. Other pairings are dropped
-// at runtime, so warn here.
+// meaningless); a name supports the string operators too; a file path supports
+// equals | startsWith. Other pairings are dropped at runtime, so warn here.
 const OPERATORS_BY_TYPE = {
   mip_label_guid: ["equals", "exists"],
   mip_label_name: ["equals", "startsWith", "endsWith", "exists"],
+  file_path: ["equals", "startsWith"],
 };
 
 function validateStatement(st, at) {
@@ -162,6 +200,9 @@ function validateStatement(st, at) {
       problems.push(`${at}.resource.identifiers: empty — the statement will never match; drop \`resource\` to apply everywhere`);
     } else {
       r.identifiers.forEach((id, j) => problems.push(...validateIdentifier(id, `${at}.resource.identifiers[${j}]`)));
+      if (r.type === "uploaded_file" && r.identifiers.some((id) => id?.type === "file_path")) {
+        problems.push(`${at}.resource: file_path never matches an uploaded_file (uploads have no path) — use open_file`);
+      }
     }
   }
   return problems;
@@ -245,8 +286,7 @@ async function main() {
     throw new Error(`graph_cloud=${cloud} requires a graph_client_id registered in that cloud`);
   }
 
-  // URLSearchParams joins with `&`; XML attribute values need it escaped.
-  const qs = params.toString().replaceAll("&", "&amp;");
+  const split = splitParams(params);
 
   const res = await fetch(manifestUrl);
   if (!res.ok) throw new Error(`fetch ${manifestUrl}: ${res.status} ${res.statusText}`);
@@ -256,8 +296,7 @@ async function main() {
     slot.lastIndex = 0;
     if (!slot.test(xml)) throw new Error(`manifest missing expected URL slot: ${slot.source}`);
     slot.lastIndex = 0;
-    // The template URL already carries ?m=<tag> — append with & not a second ?
-    xml = xml.replace(slot, (_, pre, url, post) => pre + url + (url.includes("?") ? "&amp;" : "?") + qs + post);
+    xml = xml.replace(slot, (_, pre, url, post) => pre + appendParams(url, split) + post);
   }
 
   writeFileSync(out, xml);

@@ -302,6 +302,7 @@ export const ApiV1SearchResponseSchema = type({
 });
 export const ApiV1SkillListResponseSchema = type({
     items: type({
+        ownerHandle: "string",
         slug: "string",
         displayName: "string",
         summary: "string|null?",
@@ -316,7 +317,7 @@ export const ApiV1SkillListResponseSchema = type({
             createdAt: "number",
             changelog: "string",
             license: SkillPlatformLicenseSchema.or("null").optional(),
-        }).optional(),
+        }).or("null"),
         metadata: type({
             setup: type({
                 key: "string",
@@ -606,6 +607,8 @@ export const ApiV1SkillBulkRescanBatchRequestSchema = type({
     cursor: "string|null?",
     batchSize: "number?",
     dryRun: "boolean?",
+    requestId: "string?",
+    expectedVersionIds: "string[]?",
 });
 export const ApiV1SkillBulkRescanBatchResponseSchema = type({
     ok: "true",
@@ -638,6 +641,8 @@ export const ApiV1SkillScanBatchRequestSchema = type({
     cursor: "string|null?",
     batchSize: "number?",
     dryRun: "boolean?",
+    requestId: "string?",
+    expectedVersionIds: "string[]?",
 });
 export const ApiV1SkillScanBatchResponseSchema = type({
     ok: "true",
@@ -649,6 +654,24 @@ export const ApiV1SkillScanBatchResponseSchema = type({
     nextCursor: "string|null",
     done: "boolean",
     sampleSlugs: "string[]",
+});
+export const ApiV1SkillScanJobHistoryRequestSchema = type({
+    versionId: "string",
+    cursor: "string|null?",
+});
+export const ApiV1SkillScanJobHistoryResponseSchema = type({
+    ok: "true",
+    jobs: type({
+        jobId: "string",
+        versionId: "string",
+        source: "string",
+        status: "string",
+        createdAt: "number",
+        updatedAt: "number",
+        completedAt: "number|null",
+    }).array(),
+    nextCursor: "string|null",
+    done: "boolean",
 });
 export const ApiV1SkillScanBatchStatusRequestSchema = type({
     jobIds: "string[]",
@@ -664,6 +687,8 @@ export const ApiV1SkillScanBatchStatusResponseSchema = type({
     terminal: "number",
     done: "boolean",
     failedJobIds: "string[]",
+    // Optional for clients talking to servers that predate local worker assignments.
+    queuedJobIds: "string[]?",
 });
 export const ApiV1PackageScanBatchRequestSchema = type({
     mode: '"all-active-latest"?',

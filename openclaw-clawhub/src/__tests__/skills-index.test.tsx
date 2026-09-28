@@ -1,7 +1,8 @@
-/* @vitest-environment jsdom */
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+/* @vitest-environment jsdom */
+import { TooltipProvider } from "../components/ui/tooltip";
 import {
   Route as SkillsRoute,
   SKILLS_INITIAL_PAGE_TIMEOUT_MS,
@@ -247,7 +248,7 @@ describe("SkillsIndex", () => {
     const tabs = Array.from(
       screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(tabs).toEqual(["Trending", "Featured", "Official", "New"]);
+    expect(tabs).toEqual(["Featured", "Trending", "Official", "New"]);
   });
 
   it("renders desktop category navigation and keeps the responsive category dropdown", async () => {
@@ -590,7 +591,7 @@ describe("SkillsIndex", () => {
     const tabs = Array.from(
       screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(tabs).toEqual(["Trending", "Featured", "Official", "New"]);
+    expect(tabs).toEqual(["Featured", "Trending", "Official", "New"]);
   });
 
   it("keeps the skills sort option list stable while typing a search", async () => {
@@ -1020,19 +1021,36 @@ describe("SkillsIndex", () => {
     expect(screen.queryByLabelText("Hide warnings")).toBeNull();
   });
 
-  it("passes highlightedOnly to list query when filter is active", async () => {
+  it("uses the mixed Featured list when its filter is active", async () => {
     searchMock = { highlighted: true };
     render(<SkillsIndex />);
     await act(async () => {});
+    expect(convexHttpMock.query.mock.calls.at(-1)?.[1]).toEqual({
+      categorySlug: undefined,
+      topic: undefined,
+    });
+  });
 
-    const args = getLastListPageArgs();
-    expect(args).toEqual(
-      expect.objectContaining({
-        dir: "desc",
-        highlightedOnly: true,
-      }),
+  it("renders Featured native and external skills as compact download rows", async () => {
+    searchMock = { tab: "featured" };
+    const external = makeExternalSearchResult("humanlayer/skills/show-me", "show-me", 1);
+    const native = makeListResult("native", "Native Skill");
+    convexHttpMock.query.mockResolvedValue({ page: [{ external }, native] });
+    render(
+      <TooltipProvider>
+        <SkillsIndex />
+      </TooltipProvider>,
     );
-    expect(args.sort).toBe("updated");
+    const name = await screen.findByText("show-me");
+    const row = name.closest("a");
+    expect(row?.textContent).toBe("show-me@humanlayerskills.sh42");
+    expect(await screen.findByText("Native Skill")).toBeTruthy();
+    expect(screen.getByLabelText("skills.sh lifetime installs").textContent).toBe("42");
+    expect(screen.queryByText("show-me summary")).toBeNull();
+    expect(screen.queryByText("Source")).toBeNull();
+    expect(screen.queryByText(/Observed|Updated/)).toBeNull();
+    expect(document.querySelector(".browse-list-head-category")).toBeNull();
+    expect(document.querySelector(".skill-stat-bookmarks")).toBeNull();
   });
 
   it("shows load-more button when more results are available", async () => {
@@ -1075,7 +1093,7 @@ describe("SkillsIndex", () => {
         });
 
         expect(convexHttpMock.query).toHaveBeenCalledTimes(2);
-        expect(getLastListPageArgs().cursor ?? null).toBeNull();
+        expect(convexHttpMock.query.mock.calls.at(-1)?.[1]?.cursor ?? null).toBeNull();
         expect(screen.getByText("Recovered Skill")).toBeTruthy();
         expect(screen.queryByRole("alert")).toBeNull();
         expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();

@@ -2,10 +2,39 @@
 
 ## Unreleased
 
-**Highlights:** Authenticated proxy support for isolated reviews, explicit reviewer availability, and controlled session sharing.
+- Reject invalid final Autoreview terminal results without reusing earlier reports, and keep validated output paths consistent through status cleanup and atomic report publication.
+- Refuse Autoreview output symlinks inside the reviewed repository even when their referents are outside, preserving repository entries and stale status on validation failure.
+- Keep Autoreview's configured reviewer deadline active after streamed output closes, so a still-running reviewer cannot overrun the limit and return a successful review.
+- Preserve literal Unicode separators inside Autoreview JSONL records so final reports remain authoritative and valid Amp streams are accepted.
+- Reject invalid Amp model names during Autoreview dry runs with the same provider/model diagnostic used for execution.
+- Preserve feasible Autoreview partitions when intact context leaves less room than the estimated continuation reserve, while retaining complete evidence and the prompt limit.
+- Reject colliding Autoreview JSON and human output entries before review, while preserving separate symlink and hardlink destinations when no status sidecar is requested.
+- Refuse Kimi reviews and dry runs before startup until a private prompt input channel is supported, preventing review bundles from entering process arguments without silently changing engines.
+- Reject invalid Autoreview priority environment defaults before preparation or reviewer startup, while preserving explicit priority overrides.
 
+## 0.2.0 - 2026-09-24
+
+**Highlights:** Native image review, committed source context, and more efficient multi-pass reviews.
+
+- Review added single-frame PNG, JPEG, and WebP assets in Codex branch reviews through native image attachments, with pinned bytes and per-pass manifests. Thanks @mgunnin.
+- Add Autoreview `--source-context-file` to keep explicitly selected committed source intact in every pass, with the existing provenance, mutation, path and finding-scope guards and unchanged prompt limits.
+- Add Autoreview `--source-context` for complete source bytes bound to the reviewed commit and blob, with validated same-role deduplication and strict credential-path and mutation guards, without expanding finding scope or changing generic evidence restrictions.
+- Reduce repeated Autoreview evidence without increasing passes or dropping change/evidence coverage; show planned work, add an explicit preflight pass budget, and aggregate observed Codex usage across passes and access retries with incomplete telemetry marked as a lower bound.
+- Keep complete Autoreview evidence in every change partition when it leaves sufficient change space, before splitting datasets or optimizing their allocation; preserve feasible terminal plans when batch framing cannot fit.
+- Update Autoreview’s default Codex model and account-access-only fallback; preserve explicit model choices and validate supported reasoning levels.
+- Prefer OpenAI/Codex before Claude when choosing an Autoreview engine, including independent second opinions; retain explicit user choices and require a concrete Codex availability failure before switching.
+- Split Windows skill validation into core, hardening, and boundary jobs while retaining the complete default check sequence and existing job timeouts.
+- Split Windows Autoreview hardening validation into two deterministic test-ID shards, preserving the full test union, aggregate local commands and existing job timeouts.
+
+## 0.1.0 - 2026-09-22
+
+**Highlights:** Safer Git collection and installation, explicit review completion, and reusable review and session workflows.
+
+- Prevent checkout-controlled Git execution during Autoreview PR-base discovery and collection; refuse executable conversion before review while preserving local diffs that need no converter and committed branch/commit reviews.
+- Refuse installer destinations that overlap source skills before any mutation, preventing recursive installs and source deletion with `--force`.
+- Keep unfinished Autoreview assessments incomplete while retaining validated provider observations and existing public report contracts. Thanks @vincentkoc.
 - Preflight Autoreview Git within 10 seconds, honor a trusted `AUTOREVIEW_GIT` override and macOS `DEVELOPER_DIR`, and accept absolute in-repository prompt files with existing evidence safeguards.
-- Reject unsupported GPT-6 Astra reasoning efforts before Autoreview preparation, document explicit invocation, and keep source instructions subordinate to the noninteractive review contract. Thanks @coygeek.
+- Validate requested reasoning levels before Autoreview preparation and keep source instructions subordinate to the noninteractive review contract. Thanks @coygeek.
 - Support launcher-provided authenticated HTTP/SOCKS proxies in Autoreview, preserve external transport trust settings, and redact proxy credentials from diagnostics and reports without changing reviewer isolation. Thanks @fuller-stack-dev.
 - Fix Claude reviewer startup when the CLI truncates piped help output, while retaining mandatory isolation checks. Thanks @phyrexia.
 - Add opt-in Autoreview `--status-output` to distinguish unavailable reviewers from clean, adverse, filtered, and incomplete reviews without changing existing report JSON or exit codes. Thanks @coygeek.

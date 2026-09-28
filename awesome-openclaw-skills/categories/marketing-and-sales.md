@@ -2,7 +2,7 @@
 
 [← Back to main list](../README.md#table-of-contents)
 
-**108 skills**
+**109 skills**
 
 - [4chan-reader](https://clawskills.sh/skills/aiasisbot61-4chan-reader) - Browse 4chan boards and extract thread discussions.
 - [ad-ready](https://clawskills.sh/skills/pauldelavallaz-ad-ready) - Generate professional advertising images from product URLs.
@@ -110,3 +110,4 @@
 - [posteahora](https://clawhub.ai/sashadiz/posteahora) - Schedule and publish social posts across every major network.
 - [postnitro](https://clawhub.ai/iammuneeb/skills/postnitro) - Create on-brand social media carousels and single-image posts and schedule them to LinkedIn, Instagram, TikTok, and Threads.
 - [linkedin-post-writer](https://clawhub.ai/sergebulaev/linkedin-post-writer) - LinkedIn marketing skills: viral hooks, comments, algorithm audit, humanizer.
+- [upload-post](https://clawhub.ai/victorcavero14/upload-post) - Publish and schedule social media posts through one API.

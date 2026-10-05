@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Accept `ultrafast` for Autoreview's `--codex-speed` and `AUTOREVIEW_CODEX_SPEED`, sending Codex the Ultrafast service tier when the active model catalog lists it.
+- Add `team-handoff`: start a worktree session on a shared OpenClaw Gateway behind Cloudflare Access as the operator's own identity in one `sessions.create` request, with status/archive helpers and an opt-in SSH operator fallback.
+
+## 0.4.0 - 2026-09-30
+
+**Highlights:** Review with GPT-6.1 Sol by default, with early effort validation and an access-only GPT-6 Sol retry.
+
+- Default Autoreview's Codex reviewer to GPT-6.1 Sol at high reasoning, reject unsupported efforts before preparation, and retry GPT-6 Sol only on account-access failure while preserving explicit older-model behavior. Thanks @coygeek.
+
+## 0.3.0 - 2026-09-30
+
+**Highlights:** Review deleted binary assets safely, with stronger result validation and reviewer deadlines.
+
+- Review deleted binary assets as Git deletion metadata in local, branch, and commit reviews, while preserving added-image review and refusing unsupported binary content changes. Thanks @roboclaw-bot.
 - Reject invalid final Autoreview terminal results without reusing earlier reports, and keep validated output paths consistent through status cleanup and atomic report publication.
 - Refuse Autoreview output symlinks inside the reviewed repository even when their referents are outside, preserving repository entries and stale status on validation failure.
 - Keep Autoreview's configured reviewer deadline active after streamed output closes, so a still-running reviewer cannot overrun the limit and return a successful review.
@@ -11,6 +25,8 @@
 - Reject colliding Autoreview JSON and human output entries before review, while preserving separate symlink and hardlink destinations when no status sidecar is requested.
 - Refuse Kimi reviews and dry runs before startup until a private prompt input channel is supported, preventing review bundles from entering process arguments without silently changing engines.
 - Reject invalid Autoreview priority environment defaults before preparation or reviewer startup, while preserving explicit priority overrides.
+- Normalize absolute in-repository Autoreview finding paths without losing other findings, while preserving literal filenames and refusing traversal and outside paths. Thanks @kennykankush.
+- Update the native macOS sandbox-test Codex CLI to 0.159.3.
 
 ## 0.2.0 - 2026-09-24
 

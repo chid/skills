@@ -147,6 +147,7 @@
 - [postqued-api](https://clawskills.sh/skills/syeddhasnainn-postqued-api) - PostQued social media scheduling API integration.
 - [ppt-ooxml-tool](https://clawskills.sh/skills/jason2be-ppt-ooxml-tool) - AI-agent Skill for PPTX OOXML localization workflows.
 - [proactive-soul]([https://clawskills.sh/skills/jason2be-ppt-ooxml-tool) - Gives your agent an inner life — proactive daily dispatches, persistent curiosity threads across sessions, and genuine pushback when it disagrees.
+- [project-cross-migration](https://clawhub.ai/zhouxin121/skills/project-cross-migration) - Back up, verify, and restore an agent's full workspace (conversation JSONL, memory, persona, configs) when switching devices or agent frameworks.
 - [publora](https://clawskills.sh/skills/sergebulaev-publora) - Publora API — schedule and publish social media posts across 10 platforms (X/Twitter, LinkedIn, Instagram, Threads.
 - [publora-mastodon](https://clawskills.sh/skills/sergebulaev-publora-mastodon) - Post or schedule content to Mastodon using the Publora API.
 - [qa-testing-bots](https://clawskills.sh/skills/g4dr-qa-testing-bots) - This skill enables Claude to build and run **automated QA testing bots** that simulate.

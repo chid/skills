@@ -171,7 +171,7 @@ If you believe a skill in this list should be flagged or has a security concern,
 | [DevOps & Cloud](#devops--cloud) (393) | [Calendar & Scheduling](#calendar--scheduling) (66) | |
 | [Image & Video Generation](#image--video-generation) (171) | [Media & Streaming](#media--streaming) (86) | [PDF & Documents](#pdf--documents) (105) |
 | [Apple Apps & Services](#apple-apps--services) (44) | [Notes & PKM](#notes--pkm) (69) | [Self-Hosted & Automation](#self-hosted--automation) (33) |
-| [Search & Research](#search--research) (343) | [iOS & macOS Development](#ios--macos-development) (29) | [Security & Passwords](#security--passwords) (54) |
+| [Search & Research](#search--research) (344) | [iOS & macOS Development](#ios--macos-development) (29) | [Security & Passwords](#security--passwords) (54) |
 | [Clawdbot Tools](#clawdbot-tools) (37) | [Transportation](#transportation) (111) | [Moltbook](#moltbook) (29) |
 | [CLI Utilities](#cli-utilities) (180) | [Personal Development](#personal-development) (53) | [Gaming](#gaming) (35) |
 | [Health & Fitness](#health--fitness) (87) | | |
@@ -489,8 +489,9 @@ You ship products with AI, but every launch still dies quietly because nobody po
 - [newsflash](https://clawhub.ai/zatmonkey/newsflash) - Corroborated real-time news briefings and alerts for agents.
 - [glasser](https://clawhub.ai/glasser-ai/glasser) - Search, price and run 1,000+ paid data APIs, one key.
 - [openclaw-search-skills](https://clawhub.ai/blessonism/skills/openclaw-search-skills) - Multi-source deep search with structured research reports.
+- [ask-human-expert](https://clawhub.ai/maxko87/ask-human-expert) - Ask human experts for written or voice answers, or calls.
 
-> **[View all 343 skills in Search & Research →](categories/search-and-research.md)**
+> **[View all 344 skills in Search & Research →](categories/search-and-research.md)**
 </details>
 
 <details>
@@ -597,6 +598,8 @@ You ship products with AI, but every launch still dies quietly because nobody po
 - [tempguru-event-staffing-ordering](https://clawhub.ai/kissmyabs32/tempguru-event-staffing-ordering) - Order W-2 temporary event staff across 345 US/Canada markets.
 - [posteahora](https://clawhub.ai/sashadiz/posteahora) - Schedule and publish social posts across every major network.
 - [upload-post](https://clawhub.ai/victorcavero14/upload-post) - Publish and schedule social media posts through one API.
+- [breakreach](https://clawhub.ai/samuelrondot/breakreach) - Schedule and publish posts on 19 social networks.
+- [email-marketing-bible](https://clawhub.ai/cosmoblk/email-marketing-bible) - Data-backed email marketing: flows, deliverability, copy and ESP control.
 > **[View all 108 skills in Marketing & Sales →](categories/marketing-and-sales.md)**
 </details>
 

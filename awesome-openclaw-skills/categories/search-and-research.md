@@ -2,7 +2,7 @@
 
 [← Back to main list](../README.md#table-of-contents)
 
-**343 skills**
+**344 skills**
 
 - [1](https://clawskills.sh/skills/nastrology-1) - Personal knowledge base powered by Ensue for capturing and retrieving.
 - [academic-deep-research](https://clawskills.sh/skills/kesslerio-academic-deep-research) - Transparent, rigorous research with full.
@@ -347,3 +347,4 @@
 - [xquik-x-twitter-scraper](https://clawskills.sh/skills/kriptoburak-xquik-x-twitter-scraper) - X API scraper with 40+ tools for AI agents.
 - [tavily](https://clawhub.ai/bert-builder/tavily) - AI-optimized web search using Tavily Search API.
 - [glasser](https://clawhub.ai/glasser-ai/glasser) - Search, price and run 1,000+ paid data APIs, one key.
+- [ask-human-expert](https://clawhub.ai/maxko87/ask-human-expert) - Ask human experts for written or voice answers, or calls.

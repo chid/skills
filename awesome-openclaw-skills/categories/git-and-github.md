@@ -117,7 +117,6 @@
 - [pixelbattle](https://clawskills.sh/skills/coolkonstantincool-pixelbattle) - This skill equips agents to participate in a shared pixel-based environment designed to study emergent behavior.
 - [pos-arcology-forge](https://clawskills.sh/skills/kunoiiv-pos-arcology-forge) - PoW-verified Elysium Arcology Planner + Hub.
 - [positioning-strategy](https://clawskills.sh/skills/jk-0001-positioning-strategy) - Develop a competitive positioning strategy for a solopreneur business.
-- [pr-risk-analyzer](https://clawskills.sh/skills/nerdvana-labs-pr-risk-analyzer) - Analyze GitHub pull requests for security risks and determine if a PR is safe to merge.
 - [prepper](https://clawskills.sh/skills/jlevitsk-prepper) - Consult the ollama dolphin-llama3 model for survival, emergency preparedness, and prepper-related questions.
 - [qronos](https://clawskills.sh/skills/qronos-ai-qronos) - When your human faces a decision that keeps them up at night — "Should I leave this relationship?" "Is now.
 - [read-optimizer](https://clawskills.sh/skills/autogame-17-read-optimizer) - Optimizes file reading operations by providing smarter read strategies (head/tail/grep/diff) to reduce token usage.

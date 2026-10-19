@@ -1,0 +1,200 @@
+---
+import { ArrowRight, CalendarDays, Search, X } from "@lucide/astro";
+import SampleCard from "../components/SampleCard.astro";
+import Layout from "../layouts/Layout.astro";
+import { loadCatalog } from "../lib/catalog";
+
+const samples = [...loadCatalog()].sort((left, right) =>
+  right.updateDateTime.localeCompare(left.updateDateTime) || left.title.localeCompare(right.title),
+);
+const products = [...new Set(samples.flatMap((sample) => sample.products))].sort();
+const contributors = [...new Map(samples.flatMap((sample) =>
+  sample.authors.map((author) => [author.gitHubAccount.toLocaleLowerCase("en-US"), author] as const),
+)).values()].sort((left, right) => left.name.localeCompare(right.name));
+const counts = {
+  prompts: samples.filter((sample) => sample.category === "prompts").length,
+  agents: samples.filter((sample) => sample.category === "agent-instructions").length,
+  skills: samples.filter((sample) => sample.category === "skills").length,
+};
+const basePath = import.meta.env.BASE_URL.replace(/\/?$/, "/");
+const sitePath = (path: string) => `${basePath}${path.replace(/^\/+/, "")}`;
+---
+
+<Layout description="Discover community-built prompts, agent instructions, and reusable skills for Microsoft 365 Copilot, Microsoft Copilot, and GitHub Copilot.">
+  <section class="catalog-intro container">
+    <div>
+      <p class="eyebrow">Microsoft 365 &amp; Power Platform Community</p>
+      <h1>Copilot Prompt Gallery</h1>
+      <p class="catalog-intro__descriptor">Prompts, agent instructions, and skills</p>
+      <p class="catalog-intro__copy">
+        Start with proven community patterns for Microsoft 365 Copilot, Microsoft Copilot, and GitHub Copilot—then adapt them to the way you work.
+      </p>
+    </div>
+    <div class="catalog-stat" aria-label={`${samples.length} community samples`}>
+      <strong>{samples.length}</strong>
+      <span>community samples</span>
+    </div>
+  </section>
+
+  <aside class="community-ribbon" aria-label="Community calls">
+    <div class="community-ribbon__inner container">
+      <CalendarDays size={24} aria-hidden="true" />
+      <p>Join the Copilot, Microsoft 365 &amp; Power Platform community calls.</p>
+      <a href="https://aka.ms/community/home">View community calls <ArrowRight size={16} aria-hidden="true" /></a>
+    </div>
+  </aside>
+
+  <div
+    class="catalog-backdrop"
+    style={`--catalog-side-right: url('${sitePath("/images/side-bg-right.webp")}'); --catalog-side-left: url('${sitePath("/images/side-bg-left.webp")}');`}
+  >
+    <section class="catalog-shell container" aria-labelledby="catalog-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Sample catalog</p>
+          <h2 id="catalog-heading">Explore Copilot patterns</h2>
+        </div>
+        <div class="type-summary" aria-label="Sample totals by type">
+          <span>{counts.prompts} prompts</span>
+          <span>{counts.agents} agents</span>
+          <span>{counts.skills} skills</span>
+        </div>
+      </div>
+
+      <form class="catalog-toolbar" id="catalog-filters">
+        <div class="search-control">
+          <Search size={19} aria-hidden="true" />
+          <label class="sr-only" for="search">Search samples</label>
+          <input id="search" name="q" type="search" placeholder="Search samples" autocomplete="off" />
+          <button id="clear-search" type="button" title="Clear search" aria-label="Clear search" hidden>
+            <X size={17} aria-hidden="true" />
+          </button>
+        </div>
+        <label class="sr-only" for="type">Sample type</label>
+        <select id="type" name="type">
+          <option value="">All sample types</option>
+          <option value="prompts">Prompts</option>
+          <option value="agent-instructions">Agent instructions</option>
+          <option value="skills">Skills</option>
+        </select>
+        <label class="sr-only" for="product">Product</label>
+        <select id="product" name="product">
+          <option value="">All products</option>
+          {products.map((product) => <option value={product.toLocaleLowerCase("en-US")}>{product}</option>)}
+        </select>
+        <label class="sr-only" for="author">Contributor</label>
+        <select id="author" name="contributor">
+          <option value="">All contributors</option>
+          {contributors.map((author) => <option value={author.gitHubAccount.toLocaleLowerCase("en-US")}>{author.name}</option>)}
+        </select>
+        <label class="sr-only" for="sort">Sort samples</label>
+        <select id="sort" name="sort">
+          <option value="updated">Recently updated</option>
+          <option value="newest">Newest</option>
+          <option value="title">Title</option>
+        </select>
+      </form>
+
+      <div class="catalog-status">
+        <p class="result-count" id="result-count" aria-live="polite">Showing {samples.length} samples</p>
+        <button class="clear-filters" id="clear-filters" type="button">Clear filters</button>
+      </div>
+      <div class="component-grid" id="cards">
+        {samples.map((sample, index) => <SampleCard sample={sample} index={index} />)}
+      </div>
+      <div class="empty-state" id="empty" hidden>
+        <Search size={28} aria-hidden="true" />
+        <h3>No samples found</h3>
+        <p>Try a broader search or choose different filters.</p>
+        <button class="button button--secondary" id="empty-clear" type="button">Clear filters</button>
+      </div>
+    </section>
+  </div>
+</Layout>
+
+<script>
+  function requiredElement<T extends Element>(selector: string): T {
+    const element = document.querySelector<T>(selector);
+    if (!element) throw new Error(`Catalog control could not be initialized: ${selector}`);
+    return element;
+  }
+
+  const form = requiredElement<HTMLFormElement>("#catalog-filters");
+  const grid = requiredElement<HTMLElement>("#cards");
+  const search = requiredElement<HTMLInputElement>("#search");
+  const type = requiredElement<HTMLSelectElement>("#type");
+  const product = requiredElement<HTMLSelectElement>("#product");
+  const author = requiredElement<HTMLSelectElement>("#author");
+  const sort = requiredElement<HTMLSelectElement>("#sort");
+  const count = requiredElement<HTMLElement>("#result-count");
+  const empty = requiredElement<HTMLElement>("#empty");
+  const clearSearch = requiredElement<HTMLButtonElement>("#clear-search");
+  const clearFilters = requiredElement<HTMLButtonElement>("#clear-filters");
+  const cards = [...document.querySelectorAll<HTMLElement>("[data-component-card]")];
+
+  const query = new URLSearchParams(window.location.search);
+  search.value = query.get("q") ?? "";
+  for (const [control, key] of [[type, "type"], [product, "product"], [author, "contributor"], [sort, "sort"]] as const) {
+    const requestedValue = query.get(key);
+    if (requestedValue && [...control.options].some((option) => option.value === requestedValue)) {
+      control.value = requestedValue;
+    }
+  }
+
+  function applyFilters() {
+    const searchValue = search.value.trim().toLocaleLowerCase("en-US");
+    const matches = cards.filter((card) =>
+      (!searchValue || card.dataset.search?.includes(searchValue)) &&
+      (!type.value || card.dataset.type === type.value) &&
+      (!product.value || card.dataset.products?.split("|").includes(product.value)) &&
+      (!author.value || card.dataset.authors?.split("|").includes(author.value)),
+    );
+
+    matches.sort((left, right) => {
+      if (sort.value === "title") {
+        return (left.dataset.title ?? "").localeCompare(right.dataset.title ?? "");
+      }
+      const field = sort.value === "newest" ? "created" : "updated";
+      return (right.dataset[field] ?? "").localeCompare(left.dataset[field] ?? "") ||
+        (left.dataset.title ?? "").localeCompare(right.dataset.title ?? "");
+    });
+    cards.forEach((card) => { card.hidden = true; });
+    matches.forEach((card) => {
+      card.hidden = false;
+      grid.append(card);
+    });
+
+    count.textContent = matches.length === cards.length
+      ? `Showing ${matches.length} samples`
+      : `Showing ${matches.length} matching samples`;
+    empty.hidden = matches.length > 0;
+    clearSearch.hidden = !searchValue;
+
+    const nextQuery = new URLSearchParams();
+    if (searchValue) nextQuery.set("q", search.value.trim());
+    if (type.value) nextQuery.set("type", type.value);
+    if (product.value) nextQuery.set("product", product.value);
+    if (author.value) nextQuery.set("contributor", author.value);
+    if (sort.value !== "updated") nextQuery.set("sort", sort.value);
+    window.history.replaceState({}, "", `${window.location.pathname}${nextQuery.size ? `?${nextQuery}` : ""}`);
+  }
+
+  form.addEventListener("input", applyFilters);
+  form.addEventListener("change", applyFilters);
+  clearSearch.addEventListener("click", () => {
+    search.value = "";
+    search.focus();
+    applyFilters();
+  });
+  clearFilters.addEventListener("click", () => {
+    form.reset();
+    applyFilters();
+    search.focus();
+  });
+  document.querySelector("#empty-clear")?.addEventListener("click", () => {
+    form.reset();
+    applyFilters();
+    search.focus();
+  });
+  applyFilters();
+</script>

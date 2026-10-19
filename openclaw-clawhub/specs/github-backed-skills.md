@@ -451,11 +451,46 @@ After a new `NVIDIA/skills` version reaches a completed `clean` or `suspicious`
 security verdict, ClawHub may enqueue that exact commit, path, and content hash
 for a pinned SkillEvaluator Tier 3 run. Evaluation is asynchronous and never
 blocks promotion or installation. Unchanged syncs do not enqueue another run.
+Legacy catalog skills inherit the repository from their GitHub source when no
+per-skill repository is stored; verification must still enqueue those skills.
+
+The worker pins SkillEvaluator v0.5.0 and its release commit. Its frozen Harbor
+0.24.0 dependency receives a guarded compatibility fix that strips trailing dots
+alongside underscores and hyphens from truncated trial names. Otherwise Compose
+can generate invalid image references such as `doca-compress-explicit-positive-__…`.
+The fix changes container naming only; datasets, scoring, and paired baselines
+remain unchanged. Revalidate or remove it when upgrading Harbor.
+
+After changing the configuration, the admin backfill creates new configuration-specific jobs while
+preserving prior outcomes. Its optional `sourcePaths` selection limits a canary
+to 1–20 exact paths across every page; omitting it selects the full eligible
+catalog. Repeating the backfill does not duplicate already-observed jobs.
+Sixty-four GitHub worker lanes claim jobs independently, with one active job per
+lane across workflow dispatches. Each evaluation uses four Harbor trial slots
+across its paired arms and one model agent. Per-trial resource limits, attempts,
+and baseline scoring remain unchanged. Workers claim the next skill after each
+completed, skipped, or failed evaluation instead of exiting after one skill.
+They stop when no work is claimable or after a 60-minute claim window. Retiring
+between evaluations reduces late claims on aging runners after observed runner
+disconnects at approximately 129 minutes. It does not interrupt the current
+evaluation or guarantee a provider lifetime; each claim retains its full timeout,
+three-hour lease, and short-lived model capability. The workflow timeout remains
+six hours, so the last claim has time to finish within that limit;
+workers never reserve waiting skills in advance. One failed lane does not
+cancel the others. Initial startup is staggered by five seconds per lane to
+avoid a burst of simultaneous claim actions against the shared backend.
 
 Public evaluation maintenance mutations, including targeted prioritization and
 backfill scheduling, require an active admin before reading or changing queues.
 Anonymous callers and non-admin users cannot requeue evaluations or schedule
 worker dispatch; the existing admin scheduling behavior remains available.
+The retained internal `maintenance:prioritizeQueuedSkillEvaluationsInternal`
+operator command can move 1–20 explicitly selected, already-due NVIDIA backfill
+runs ahead of other backfill work so larger evaluations can start earlier. It
+defaults to a dry run and validates the entire batch's current configuration,
+content, queued state, and expected attempt counts before writing. It changes
+only queue priority and update time, preserving retry backoff, attempt/error
+history, active leases, terminal outcomes, and the priority of new sync work.
 
 The worker discovers only SkillEvaluator's supported upstream `evals/` layout.
 Missing, conflicting, or unsupported eval inputs produce a durable skipped
@@ -472,6 +507,27 @@ pinned subject/judge models, required OpenAI endpoints, a bounded request count,
 disabled provider-side background work, and the lifetime of that one run.
 SkillEvaluator still runs the agent in its secure Docker mode; the capability
 is closed when the evaluator exits.
+The allowance is 8,192 forwarded requests for the entire paired evaluation,
+including subject turns and judge calls. A 1,024-request allowance exhausted
+partway through larger datasets, turning otherwise successful provider calls
+into local 429 failures. Request reservations happen after body validation,
+without yielding between checking and decrementing the allowance. Worker logs
+record the forwarded count, local budget rejections, and upstream 429 responses;
+failure summaries retain the latter two counts before native error details.
+The `skill_evaluation_failed` log event includes the same bounded, redacted
+`publicReason` stored with the failed run, so CI exposes actionable diagnostics
+without logging raw errors or worker credentials.
+SkillEvaluator uses its `openai-compatible` gateway adapter so Codex selects a
+custom HTTP Responses provider instead of trying the native OpenAI WebSocket
+transport against the HTTP broker.
+For GPT-5 Chat Completions, the broker translates the legacy `max_tokens` field
+emitted for proxy URLs into OpenAI's `max_completion_tokens`, preserving its
+value. It normalizes upstream HTTP 520 to 502 so the pinned evaluator's existing
+bounded retries and judge deadline cover this gateway failure. Response bodies,
+retry headers, and the per-request capability allowance are preserved; the broker
+does not add its own retry loop.
+Native execution errors take precedence over rendered command output;
+fallback diagnostics redact both streams before retaining their bounded tails.
 
 ## UI
 

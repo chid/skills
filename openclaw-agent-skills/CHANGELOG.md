@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- Run native macOS sandbox and Git-boundary CI checks on the `xcode-27` Apple Silicon image.
+
+## 0.6.0 - 2026-10-18
+
+- Allow release tags signed by @vincentkoc's registered SSH signing key alongside the existing release signer.
+
+- Wait for owned Windows reviewer processes after successful tree termination, preserving deadline cleanup and exit-status collection.
+
+- Review submodule gitlink additions, bumps and removals as exact pin metadata with selected `.gitmodules` URLs, preserving isolated Git/authentication and explicit upstream-code scope.
+
+- Run OpenClaw reviews through restricted agent execution, preserving canonical capture and validation with a bounded sandbox handoff; clarify yielding and process ownership. Thanks @shakkernerd. (#323, #325, #326)
+- Document independent Copilot subagent reviews when the Codex CLI is unavailable, keeping model access separate from local CLI availability. Thanks @shanselman. (#324)
+
+- Prevent both PowerShell review launchers from importing unrelated modules while searching for Python. Qualify copied source archives on Python 3.10/3.11 and native Windows PowerShell, including real optional Pillow/tomli branches without model calls.
+
+- Document pinned source installation and explicit upgrades/rollback; cover copy/symlink replacement, external state preservation, and installed Autoreview help without changing installer behavior.
+
+- Add optional Autoreview preflight summaries for clean committed branch reviews, preserving native reports, status, and exit codes without another model call or GitHub write.
+- Add `autoreview --version` to identify the executing helper's source bytes without review preparation, configuration reads or output changes.
+
+- Preserve existing output files during Autoreview dry runs, including when target selection or preflight fails; real reviews still clear stale status before starting.
+
+- Make this repository's ClawSweeper reviews opt-in for maintainer PRs and issues, with a one-time reminder; clarify when agents should request hosted reviews in the shared Autoreview skill.
+
 - Isolate Autoreview's configured command-auth provider from subscription credentials so an expired subscription cannot break a working direct-provider retry.
 
 - Accept and project `supports_websockets` on Autoreview's named command-auth OpenAI route, so reviews use the Responses WebSocket transport instead of re-uploading the full prompt on every step.

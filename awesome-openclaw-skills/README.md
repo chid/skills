@@ -165,7 +165,7 @@ If you believe a skill in this list should be flagged or has a security concern,
 | | | |
 |---|---|---|
 | [Git & GitHub](#git--github) (167) | [Marketing & Sales](#marketing--sales) (108) | [Communication](#communication) (146) |
-| [Coding Agents & IDEs](#coding-agents--ides) (1184) | [Productivity & Tasks](#productivity--tasks) (207) | [Speech & Transcription](#speech--transcription) (47) |
+| [Coding Agents & IDEs](#coding-agents--ides) (1184) | [Productivity & Tasks](#productivity--tasks) (207) | [Speech & Transcription](#speech--transcription) (48) |
 | [Browser & Automation](#browser--automation) (323) | [AI & LLMs](#ai--llms) (176) | [Smart Home & IoT](#smart-home--iot) (41) |
 | [Web & Frontend Development](#web--frontend-development) (920) | [Data & Analytics](#data--analytics) (28) | [Shopping & E-commerce](#shopping--e-commerce) (51) |
 | [DevOps & Cloud](#devops--cloud) (393) | [Calendar & Scheduling](#calendar--scheduling) (66) | |
@@ -337,7 +337,7 @@ You ship products with AI, but every launch still dies quietly because nobody po
 - [agentic-browser-0-1-2](https://clawskills.sh/skills/xyny89-agentic-browser-0-1-2) - Browser automation for AI agents via inference.sh.
 - [agentic-security-audit](https://clawskills.sh/skills/kingrubic-agentic-security-audit) - Audit codebases, infrastructure, AND agentic AI systems for security issues.
 - [agentpay](https://clawskills.sh/skills/kar69-96-agentpay) - Buy things from real websites on behalf of your human.
-
+- [website-generator](https://clawhub.sh/clowreed/skills/website-generator) - Describe your business and B12 builds a polished, launch-ready website right from your agent. No code, no designer, no waiting.
 > **[View all 925 skills in Web & Frontend Development →](categories/web-and-frontend-development.md)**
 </details>
 
@@ -600,6 +600,7 @@ You ship products with AI, but every launch still dies quietly because nobody po
 - [upload-post](https://clawhub.ai/victorcavero14/upload-post) - Publish and schedule social media posts through one API.
 - [breakreach](https://clawhub.ai/samuelrondot/breakreach) - Schedule and publish posts on 19 social networks.
 - [email-marketing-bible](https://clawhub.ai/cosmoblk/email-marketing-bible) - Data-backed email marketing: flows, deliverability, copy and ESP control.
+- [fuxux-openclaw-skill](https://clawhub.ai/abogitoff/fuxux-openclaw-skill) - Schedule and publish social media posts to 12 platforms.
 > **[View all 108 skills in Marketing & Sales →](categories/marketing-and-sales.md)**
 </details>
 
@@ -972,8 +973,9 @@ You ship products with AI, but every launch still dies quietly because nobody po
 - [elevenlabs-tts](https://clawskills.sh/skills/shaharsha-elevenlabs-tts) - ElevenLabs TTS - the best ElevenLabs integration for OpenClaw.
 - [elevenlabs-voices](https://clawskills.sh/skills/robbyczgw-cla-elevenlabs-voices) - High-quality voice synthesis with 18 personas, 32.
 - [youtube-transcript-speaker-diarization](https://clawhub.ai/patelnav/youtube-transcript-speaker-diarization) - Speaker-labeled YouTube transcripts via the diarize.io API.
+- [bulktranscripts-youtube](https://clawhub.ai/pratie/bulktranscripts-youtube) - YouTube transcripts for single videos, whole channels and playlists.
 
-> **[View all 47 skills in Speech & Transcription →](categories/speech-and-transcription.md)**
+> **[View all 48 skills in Speech & Transcription →](categories/speech-and-transcription.md)**
 </details>
 
 <details>
@@ -1037,6 +1039,7 @@ You ship products with AI, but every launch still dies quietly because nobody po
 - [csvtoexcel](https://clawskills.sh/skills/xuanguan2020-csvtoexcel) - Convert CSV files to professionally formatted Excel workbooks with Chinese character support, automatic formatting.
 - [dupe](https://clawskills.sh/skills/crisanmm-dupe) - Uses dupe.com APIs in order to find similar products for the product found in the input URL given by the user.
 - [eachlabs-product-visuals](https://clawskills.sh/skills/eftalyurtseven-eachlabs-product-visuals) - Generate e-commerce product photography and videos.
+- [takeout-coupon](https://clawhub.ai/moooai/takeout-coupon) - Chinese food-delivery coupon codes for Meituan, Ele.me and JD.
 
 > **[View all 51 skills in Shopping & E-commerce →](categories/shopping-and-e-commerce.md)**
 </details>

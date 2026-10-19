@@ -1,0 +1,81 @@
+---
+import { ArrowLeft, Download, ExternalLink } from "@lucide/astro";
+import Layout from "../../../layouts/Layout.astro";
+import { loadCatalog, type CatalogSample } from "../../../lib/catalog";
+
+export function getStaticPaths() {
+  return loadCatalog().map((sample) => ({
+    params: { category: sample.category, slug: sample.slug },
+    props: { sample },
+  }));
+}
+
+const { sample } = Astro.props as { sample: CatalogSample };
+const thumbnail = [...sample.thumbnails].sort((left, right) => left.order - right.order)[0];
+const formattedCreated = new Intl.DateTimeFormat("en", { year: "numeric", month: "short", day: "numeric" }).format(new Date(sample.creationDateTime));
+const formattedUpdated = new Intl.DateTimeFormat("en", { year: "numeric", month: "short", day: "numeric" }).format(new Date(sample.updateDateTime));
+const galleryUrl = `${import.meta.env.BASE_URL}`;
+const avatarUrl = (author: { gitHubAccount: string; pictureUrl?: string }) => {
+  if (author.pictureUrl) {
+    const pictureUrl = new URL(author.pictureUrl);
+    if (pictureUrl.hostname !== "github.com" || pictureUrl.pathname.endsWith(".png")) {
+      return author.pictureUrl;
+    }
+  }
+  return `https://github.com/${encodeURIComponent(author.gitHubAccount)}.png?size=76`;
+};
+---
+
+<Layout title={sample.title} description={sample.shortDescription} image={thumbnail.url}>
+  <nav class="breadcrumb container" aria-label="Breadcrumb">
+    <a href={galleryUrl}><ArrowLeft size={16} aria-hidden="true" /> Back to gallery</a>
+  </nav>
+
+  <section class="detail-hero container">
+    <div>
+      <p class="eyebrow">{sample.type}</p>
+      <h1>{sample.title}</h1>
+      <p class="detail-hero__summary">{sample.shortDescription}</p>
+      <div class="action-row">
+        <a class="button button--primary" href={sample.downloadUrl}><Download size={17} aria-hidden="true" /> Download sample</a>
+        <a class="button button--secondary" href={sample.url}>View source <ExternalLink size={16} aria-hidden="true" /></a>
+      </div>
+      <div class="detail-authors">
+        {sample.authors.map((author) => (
+          <a href={`https://github.com/${author.gitHubAccount}`}>
+            <img src={avatarUrl(author)} alt="" width="38" height="38" />
+            <span>{author.name}</span>
+          </a>
+        ))}
+      </div>
+    </div>
+    <figure class="detail-preview">
+      <img src={thumbnail.url} alt={thumbnail.alt} />
+    </figure>
+  </section>
+
+  <section class="facts-band">
+    <dl class="component-facts container">
+      <div><dt>Sample type</dt><dd>{sample.type}</dd></div>
+      <div><dt>Products</dt><dd>{sample.products.join(", ")}</dd></div>
+      <div><dt>Created</dt><dd><time datetime={sample.creationDateTime}>{formattedCreated}</time></dd></div>
+      <div><dt>Updated</dt><dd><time datetime={sample.updateDateTime}>{formattedUpdated}</time></dd></div>
+    </dl>
+  </section>
+
+  <section class="content-section container detail-documentation">
+    <div class="section-heading"><div><p class="eyebrow">Sample documentation</p><h2>How to use this sample</h2></div></div>
+    <div class="readme-content" set:html={sample.readmeHtml} />
+  </section>
+
+  {sample.references?.length > 0 && (
+    <section class="content-section content-section--tint">
+      <div class="container resource-list">
+        <div><p class="eyebrow">Learn more</p><h2>References</h2><p>Background and supporting resources provided by the contributor.</p></div>
+        <nav aria-label="Sample references">
+          {sample.references.map((reference) => <a href={reference.url}>{reference.name} <ExternalLink size={16} aria-hidden="true" /></a>)}
+        </nav>
+      </div>
+    </section>
+  )}
+</Layout>

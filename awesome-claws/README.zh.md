@@ -58,6 +58,7 @@ OpenClaw 所在的生态横跨：个人 AI 助手、学术研究工作流、编�
 - [个人助手](#个人助手)
 - [Agent公司](#agent公司)
 - [学术研究](#学术研究)
+- [基准测试与评估](#基准测试与评估)
 - [编程开发](#编程开发)
 - [技能与工具](#技能与工具)
 - [自动化](#自动化)
@@ -107,6 +108,7 @@ OpenClaw 所在的生态横跨：个人 AI 助手、学术研究工作流、编�
 - [**laborany/laborany**](https://github.com/laborany/laborany) ![GitHub stars](https://img.shields.io/github/stars/laborany/laborany?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/laborany/laborany?style=flat-square) — 桌面 AI 工作台，把 AI 能力封装为「技能」，支持意图分发、定时执行和记忆管理，让非开发者也能调度 AI 完成工作流。
 - [**zhixianio/botdrop-android**](https://github.com/zhixianio/botdrop-android) ![GitHub stars](https://img.shields.io/github/stars/zhixianio/botdrop-android?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/zhixianio/botdrop-android?style=flat-square) — 在 Android 手机上运行 AI agent 的引导式安装应用，无需终端和 CLI，开箱即用。
 - [**GCWing/BitFun**](https://github.com/GCWing/BitFun) ![GitHub stars](https://img.shields.io/github/stars/GCWing/BitFun?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/GCWing/BitFun?style=flat-square) — 新一代 Agent 系统，围绕「有人格和记忆的 AI 助手」构建，内置 Code Agent 和 Cowork Agent，支持开放扩展。
+- [**tinyhumansai/openhuman**](https://github.com/tinyhumansai/openhuman) ![GitHub stars](https://img.shields.io/github/stars/tinyhumansai/openhuman?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/tinyhumansai/openhuman?style=flat-square) — 开源、自托管的社区个人 AI 助手。跨平台桌面应用（Tauri + Rust 内核），支持多渠道消息、知识图谱记忆、技能、语音，以及本地或云端 LLM 路由。
 
 ## Agent公司
 
@@ -127,6 +129,7 @@ OpenClaw 所在的生态横跨：个人 AI 助手、学术研究工作流、编�
 
 - [**ythx-101/openclaw-qa**](https://github.com/ythx-101/openclaw-qa) ![GitHub stars](https://img.shields.io/github/stars/ythx-101/openclaw-qa?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/ythx-101/openclaw-qa?style=flat-square) — 面向 OpenClaw 实践者的社区问答仓库，聚焦记忆、多 Agent、工具配置与部署踩坑等真实经验。
 - [**PolynomialTime/AgentPanel**](https://github.com/PolynomialTime/AgentPanel) ![GitHub stars](https://img.shields.io/github/stars/PolynomialTime/AgentPanel?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/PolynomialTime/AgentPanel?style=flat-square) — 面向研究问题的人类 × AI agent 协作讨论社区。
+- [**Plazmi**](https://plazmi.gg) — 面向 AI agent 的家园世界：按真实 UTC 时间运行，支持房屋、花园、留言簿和信件；agent 可通过 HTTP [技能](https://github.com/cairn-agent/plazmi-skill)、远程 MCP 或 [Python CLI](https://github.com/cairn-agent/plazmi-cli) 接入。
 
 ## 运营与内容创作
 
@@ -153,6 +156,13 @@ OpenClaw 所在的生态横跨：个人 AI 助手、学术研究工作流、编�
 - [**Zaoqu-Liu/ScienceClaw**](https://github.com/Zaoqu-Liu/ScienceClaw) ![GitHub stars](https://img.shields.io/github/stars/Zaoqu-Liu/ScienceClaw?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/Zaoqu-Liu/ScienceClaw?style=flat-square) — 基于 OpenClaw 的 AI 科研天团 / 科研工作流助手项目。
 - [**Color2333/PaperMind**](https://github.com/Color2333/PaperMind) ![GitHub stars](https://img.shields.io/github/stars/Color2333/PaperMind?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/Color2333/PaperMind?style=flat-square) — 面向追踪、分析、知识图谱和写作支持的 AI 学术研究工作流平台。
 - [**wanshuiyin/Auto-claude-code-research-in-sleep**](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) ![GitHub stars](https://img.shields.io/github/stars/wanshuiyin/Auto-claude-code-research-in-sleep?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/wanshuiyin/Auto-claude-code-research-in-sleep?style=flat-square) — ARIS：轻量纯 Markdown 技能包，支持自主 ML 科研——跨模型审稿循环、idea 发现、实验自动化。无框架依赖，兼容 Claude Code、Codex、OpenClaw 等任意 LLM agent。
+- [**zjg678/suppr-mcp**](https://github.com/zjg678/suppr-mcp) ![GitHub stars](https://img.shields.io/github/stars/zjg678/suppr-mcp?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/zjg678/suppr-mcp?style=flat-square) — 通过 Suppr 托管 API 提供学术文献检索与文档翻译的 MCP 服务，需自备 API Key。[配套技能](https://github.com/WildDataX/suppr-skills)。
+
+## 基准测试与评估
+
+适用于在部署前检验 OpenClaw 风格助手能否完成真实任务。
+
+- [**TIGER-AI-Lab/ClawBench**](https://github.com/TIGER-AI-Lab/ClawBench) ![GitHub stars](https://img.shields.io/github/stars/TIGER-AI-Lab/ClawBench?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/TIGER-AI-Lab/ClawBench?style=flat-square) — 开源基准测试工具，让 OpenClaw 及其他网页 Agent 在真实网站上执行日常任务，并提供隔离运行、请求拦截与五层轨迹记录。[项目主页](https://claw-bench.com) · [论文](https://arxiv.org/abs/2604.08523)。
 
 ## 编程开发
 
@@ -210,6 +220,11 @@ OpenClaw 所在的生态横跨：个人 AI 助手、学术研究工作流、编�
 - [**supermemoryai/openclaw-supermemory**](https://github.com/supermemoryai/openclaw-supermemory) ![GitHub stars](https://img.shields.io/github/stars/supermemoryai/openclaw-supermemory?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/supermemoryai/openclaw-supermemory?style=flat-square) — 基于 Supermemory 云服务的 OpenClaw 长期记忆插件，自动记住对话、召回相关上下文并构建用户画像。
 - [**nhevers/MoltBrain**](https://github.com/nhevers/MoltBrain) ![GitHub stars](https://img.shields.io/github/stars/nhevers/MoltBrain?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/nhevers/MoltBrain?style=flat-square) — 面向 OpenClaw 的长期记忆层，自动学习和召回项目上下文。
 - [**ToolRouter**](https://toolrouter.com) — 为您的AI代理提供超能力，只需一个账户即可按需访问150多种工具。竞争对手研究、视频制作、网络搜索、图像生成、安全扫描等更多功能。 / Give your AI agent superpowers with access to 150+ tools on demand with just one account. Competitor research, video production, web search, image generation, security scanning, and more.
+- [**tinyhumansai/tiny.place**](https://github.com/tinyhumansai/tiny.place) ![GitHub stars](https://img.shields.io/github/stars/tinyhumansai/tiny.place?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/tinyhumansai/tiny.place?style=flat-square) — 以 OpenClaw 技能形式提供的 agent 间社交网络：注册 @handle 身份、在开放目录中被发现、通过 Signal 端到端加密与其他 agent 通信，并基于 x402 在 Solana 上用 USDC 和 SOL 交易。已发布到 ClawHub。
+- [**ct-jaryn/openclaw-plugin-baizhi-agent-toolkit**](https://github.com/ct-jaryn/openclaw-plugin-baizhi-agent-toolkit) ![GitHub stars](https://img.shields.io/github/stars/ct-jaryn/openclaw-plugin-baizhi-agent-toolkit?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/ct-jaryn/openclaw-plugin-baizhi-agent-toolkit?style=flat-square) — 连接百智云托管 MCP 网络搜索与内容提取的 OpenClaw 代码插件；需自备 API Key，工具调用可能收费。
+- [**jarimustonen/formative-memory**](https://github.com/jarimustonen/formative-memory) ![GitHub stars](https://img.shields.io/github/stars/jarimustonen/formative-memory?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/jarimustonen/formative-memory?style=flat-square) — OpenClaw 长期记忆插件，结合 BM25 与向量检索、关联权重及来源强化，并通过夜间整合衰减、剪枝和合并记忆，使用 SQLite 与 sqlite-vec 存储。
+- [**bin1874/before-you-build-skill**](https://github.com/bin1874/before-you-build-skill) ![GitHub stars](https://img.shields.io/github/stars/bin1874/before-you-build-skill?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/bin1874/before-you-build-skill?style=flat-square) — 面向 OpenClaw、Codex、Claude Code 等支持 SKILL.md 的 agent 的开发前产品风险评审技能，检查需求、定位、变现、留存与分发。
+- [**agentrhq/authsome**](https://github.com/agentrhq/authsome) ![GitHub stars](https://img.shields.io/github/stars/agentrhq/authsome?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/agentrhq/authsome?style=flat-square) — 面向 AI agent 的本地凭证代理，支持 OAuth2 与 API Key 登录、本地加密凭证库，以及向出站请求注入凭证的代理，可用于 OpenClaw 等 agent 工作流。
 
 ## 自动化
 
@@ -234,6 +249,7 @@ OpenClaw 所在的生态横跨：个人 AI 助手、学术研究工作流、编�
 - [**666ghj/MiroFish**](https://github.com/666ghj/MiroFish) ![GitHub stars](https://img.shields.io/github/stars/666ghj/MiroFish?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/666ghj/MiroFish?style=flat-square) — 面向多类预测场景的群体智能引擎。
 - [**BlockRunAI/awesome-OpenClaw-Money-Maker**](https://github.com/BlockRunAI/awesome-OpenClaw-Money-Maker) ![GitHub stars](https://img.shields.io/github/stars/BlockRunAI/awesome-OpenClaw-Money-Maker?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/BlockRunAI/awesome-OpenClaw-Money-Maker?style=flat-square) — 聚焦 OpenClaw 风格 AI agent 变现的精选资源列表。
 - [**EthanAlgoX/MarketBot**](https://github.com/EthanAlgoX/MarketBot) ![GitHub stars](https://img.shields.io/github/stars/EthanAlgoX/MarketBot?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/EthanAlgoX/MarketBot?style=flat-square) — 面向市场分析与自动执行场景的 agent 化工作流项目。
+- [**plagtech/SpraayBatch**](https://github.com/plagtech/SpraayBatch) ![GitHub stars](https://img.shields.io/github/stars/plagtech/SpraayBatch?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/plagtech/SpraayBatch?style=flat-square) — 面向 OpenClaw agent 的 Base 链 ERC-20 批量支付插件，默认使用 USDC，支持批量收款人、单 agent 预算上限及可选 CDP Paymaster 手续费赞助。[ClawHub 插件](https://clawhub.ai/plagtech/plugins/spraay-batch)。
 
 ## 渠道与集成
 
@@ -280,7 +296,7 @@ OpenClaw 所在的生态横跨：个人 AI 助手、学术研究工作流、编�
 - [**JohnRiceML/clawport-ui**](https://github.com/JohnRiceML/clawport-ui) ![GitHub stars](https://img.shields.io/github/stars/JohnRiceML/clawport-ui?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/JohnRiceML/clawport-ui?style=flat-square) — 开源 AI agent 指挥中心看板，集成组织图、直聊、看板、Cron 监控、成本追踪、活动日志和记忆浏览器。
 - [**dongsheng123132/u-claw**](https://github.com/dongsheng123132/u-claw) ![GitHub stars](https://img.shields.io/github/stars/dongsheng123132/u-claw?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/dongsheng123132/u-claw?style=flat-square) — 面向中国用户的 OpenClaw 离线安装包，预置运行时、依赖、渠道扩展和技能集合。
 - [**raulvidis/openclaw-multi-agent-kit**](https://github.com/raulvidis/openclaw-multi-agent-kit) ![GitHub stars](https://img.shields.io/github/stars/raulvidis/openclaw-multi-agent-kit?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/raulvidis/openclaw-multi-agent-kit?style=flat-square) — 经过生产验证的多 agent 部署模板，含 10 个 agent 人格、Telegram 超级群集成和 bot 间通信。
-- [**vivekchand/clawmetry**](https://github.com/vivekchand/clawmetry) ![GitHub stars](https://img.shields.io/github/stars/vivekchand/clawmetry?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/vivekchand/clawmetry?style=flat-square) — 面向 OpenClaw agents 的实时可观测性看板，适合查看执行轨迹、运行状态和调试过程。
+- [**vivekchand/clawmetry**](https://github.com/vivekchand/clawmetry) ![GitHub stars](https://img.shields.io/github/stars/vivekchand/clawmetry?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/vivekchand/clawmetry?style=flat-square) — 面向 OpenClaw 及其他 agent 运行时的实时可观测性看板，支持轨迹查看、运行状态与调试。开源免费版本支持 OpenClaw、NVIDIA NemoClaw、Goose 与 Qwen Code；其他运行时集成需付费配套组件。[官网](https://clawmetry.com)。
 - [**swarmclawai/swarmclaw**](https://github.com/swarmclawai/swarmclaw) ![GitHub stars](https://img.shields.io/github/stars/swarmclawai/swarmclaw?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/swarmclawai/swarmclaw?style=flat-square) — 自托管的 AI agent 编排看板，支持 OpenClaw 集成、多模型供应商、LangGraph 工作流和聊天平台连接。
 - [**jzOcb/context-doctor**](https://github.com/jzOcb/context-doctor) ![GitHub stars](https://img.shields.io/github/stars/jzOcb/context-doctor?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/jzOcb/context-doctor?style=flat-square) — OpenClaw 上下文窗口可视化与诊断工具，一条命令查看 token 使用、文件状态和剩余空间。
 - [**caprihan/openclaw-n8n-stack**](https://github.com/caprihan/openclaw-n8n-stack) ![GitHub stars](https://img.shields.io/github/stars/caprihan/openclaw-n8n-stack?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/caprihan/openclaw-n8n-stack?style=flat-square) — 开箱即用的 OpenClaw + n8n Docker 部署栈，AI agent 与工作流自动化一体自托管。
@@ -296,6 +312,7 @@ OpenClaw 所在的生态横跨：个人 AI 助手、学术研究工作流、编�
 - [**openclaw-rocks/k8s-operator**](https://github.com/openclaw-rocks/k8s-operator) ![GitHub stars](https://img.shields.io/github/stars/openclaw-rocks/k8s-operator?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/openclaw-rocks/k8s-operator?style=flat-square) — Kubernetes Operator，声明式管理 OpenClaw AI agent 实例，支持生产级安全、可观测性和自动扩缩容。
 - [**23blocks-OS/ai-maestro**](https://github.com/23blocks-OS/ai-maestro) ![GitHub stars](https://img.shields.io/github/stars/23blocks-OS/ai-maestro?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/23blocks-OS/ai-maestro?style=flat-square) — AI Agent 编排器，统一看板管理多个 coding agent，内置持久记忆、agent 间通信与跨机器支持。
 - [**tugcantopaloglu/openclaw-dashboard**](https://github.com/tugcantopaloglu/openclaw-dashboard) ![GitHub stars](https://img.shields.io/github/stars/tugcantopaloglu/openclaw-dashboard?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/tugcantopaloglu/openclaw-dashboard?style=flat-square) — 安全的 OpenClaw 实时监控看板，支持认证、TOTP MFA、成本追踪、实时动态和记忆浏览器。
+- [**flik2002/openclaw-monitor**](https://github.com/flik2002/openclaw-monitor) ![GitHub stars](https://img.shields.io/github/stars/flik2002/openclaw-monitor?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/flik2002/openclaw-monitor?style=flat-square) — 开源 OpenClaw 监控看板，展示本地会话、token 使用量、七日趋势与系统指标。
 
 ## 精选列表与用例
 

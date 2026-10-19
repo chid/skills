@@ -7,7 +7,9 @@ import {
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
+import { endorAnalysisValidator } from "./lib/endorAnalysis";
 import { editorialSelection, featuredPublication } from "./lib/featuredSelections";
+import { sdkUsageEntry, sdkUsageScan } from "./lib/packageSdkUsageContract";
 import {
   pluginCategoryClassificationValidator,
   pluginCategoryReviewValidator,
@@ -151,7 +153,7 @@ const llmRiskSummaryBucketValidator = v.object({
   highestSeverity: v.optional(v.string()),
 });
 
-const llmAnalysisValidator = v.object({
+export const llmAnalysisValidator = v.object({
   status: v.string(),
   verdict: v.optional(v.string()),
   confidence: v.optional(v.string()),
@@ -1775,6 +1777,7 @@ const packages = defineTable({
   runtimeId: v.optional(v.string()),
   sourceRepo: v.optional(v.string()),
   latestReleaseId: v.optional(v.id("packageReleases")),
+  sdkUsageScanId: v.optional(v.id("packageInspectorScanStates")),
   latestVersionSummary: v.optional(
     v.object({
       version: v.string(),
@@ -1941,36 +1944,8 @@ const packageReleases = defineTable({
   vtAnalysis: v.optional(vtAnalysisValidator),
   aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
-  llmAnalysis: v.optional(
-    v.object({
-      status: v.string(),
-      verdict: v.optional(v.string()),
-      confidence: v.optional(v.string()),
-      summary: v.optional(v.string()),
-      dimensions: v.optional(
-        v.array(
-          v.object({
-            name: v.string(),
-            label: v.string(),
-            rating: v.string(),
-            detail: v.string(),
-          }),
-        ),
-      ),
-      guidance: v.optional(v.string()),
-      findings: v.optional(v.string()),
-      agenticRiskFindings: v.optional(v.array(llmAgenticRiskFindingValidator)),
-      riskSummary: v.optional(
-        v.object({
-          abnormal_behavior_control: llmRiskSummaryBucketValidator,
-          permission_boundary: llmRiskSummaryBucketValidator,
-          sensitive_data_protection: llmRiskSummaryBucketValidator,
-        }),
-      ),
-      model: v.optional(v.string()),
-      checkedAt: v.number(),
-    }),
-  ),
+  endorAnalysis: v.optional(endorAnalysisValidator),
+  llmAnalysis: v.optional(llmAnalysisValidator),
   staticScan: v.optional(
     v.object({
       status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
@@ -2089,6 +2064,9 @@ const packageInspectorWarnings = defineTable({
   issueClass: v.optional(v.string()),
   compatStatus: v.optional(v.string()),
   deprecated: v.optional(v.boolean()),
+  deprecatedApi: v.optional(v.string()),
+  replacement: v.optional(v.string()),
+  removeAfter: v.optional(v.string()),
   message: v.string(),
   evidence: v.optional(v.array(v.string())),
   authorRemediation: v.optional(
@@ -2138,6 +2116,7 @@ const packageInspectorScanStates = defineTable({
   targetOpenClawVersion: v.string(),
   completedAt: v.number(),
   notificationCompletedAt: v.optional(v.number()),
+  sdkUsage: v.optional(sdkUsageScan),
 })
   .index("by_release_and_inspector_version_and_target_openclaw_version", [
     "releaseId",
@@ -2145,6 +2124,16 @@ const packageInspectorScanStates = defineTable({
     "targetOpenClawVersion",
   ])
   .index("by_release_and_completed_at", ["releaseId", "completedAt"]);
+
+const packageSdkUsage = defineTable({
+  ...sdkUsageEntry.fields,
+  packageId: v.id("packages"),
+  releaseId: v.id("packageReleases"),
+  scanId: v.id("packageInspectorScanStates"),
+  evidenceCount: v.number(),
+})
+  .index("by_key", ["key"])
+  .index("by_packageId_and_key", ["packageId", "key"]);
 
 const securityScanJobs = defineTable({
   targetKind: securityScanTargetKindValidator,
@@ -3268,6 +3257,9 @@ const catalogFeedPublications = defineTable({
   payload: v.string(),
   payloadSha256: v.string(),
   publishedAt: v.number(),
+  clawPolicyVersion: v.optional(v.literal(1)),
+  clawEntryCount: v.optional(v.number()),
+  clawPublisherId: v.optional(v.id("publishers")),
 }).index("by_feed", ["feedId"]);
 
 const stars = defineTable({
@@ -4726,6 +4718,7 @@ export default defineSchema({
   packageInspectorFindingNotifications,
   packageInspectorScanCursors,
   packageInspectorScanStates,
+  packageSdkUsage,
   securityScanJobs,
   securityScanDispatchState,
   skillEvaluationRuns,

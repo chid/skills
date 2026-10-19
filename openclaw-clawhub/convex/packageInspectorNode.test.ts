@@ -16,6 +16,97 @@ afterEach(() => {
 });
 
 describe("package inspector publish normalization", () => {
+  it("preserves structured retirement metadata without requiring separate prose remediation", () => {
+    const retirement = {
+      deprecatedApi: "readAcpSessionEntry",
+      replacement: "readAcpSessionEntryAsync",
+      removeAfter: "2026-12-31",
+    };
+    const result = normalizeInspectorReportForPublish({
+      status: "pass",
+      issues: [
+        {
+          code: "sdk-deprecated-api",
+          level: "warning",
+          issueClass: "deprecation-warning",
+          deprecated: true,
+          message: "An OpenClaw API has a scheduled retirement.",
+          ...retirement,
+        },
+      ],
+    });
+    expect(result.warnings).toEqual([expect.objectContaining(retirement)]);
+    expect(result.breakages).toEqual([]);
+  });
+  it.each([
+    { key: "api-member:wrong", identity: "api.registerTool" },
+    { evidence: [{ path: "index.js", line: -1, snippet: "api.registerTool(tool)" }] },
+    { referenceKinds: ["executed"] },
+  ])("keeps publishing independent of malformed SDK inventory: %j", (invalidEntry) => {
+    const result = normalizeInspectorReportForPublish({
+      issues: [],
+      sdkUsage: {
+        schemaVersion: 1,
+        analysisVersion: "1",
+        inputKind: "artifact",
+        status: "complete",
+        entries: [
+          {
+            key: "api-member:api.registerTool",
+            kind: "api-member",
+            identity: "api.registerTool",
+            classification: "runtime",
+            referenceKinds: ["call"],
+            deprecationCodes: [],
+            evidence: [{ path: "index.js", line: 1, snippet: "api.registerTool(tool)" }],
+            ...invalidEntry,
+          },
+        ],
+        unknowns: [],
+        coverage: { filesDiscovered: 1, filesAnalyzed: 1, filesExcluded: 0 },
+      },
+    });
+    expect(result).toMatchObject({
+      status: "pass",
+      warnings: [],
+      breakages: [],
+      sdkUsage: { status: "failed", entries: [] },
+    });
+  });
+
+  it("preserves the full SDK inventory when author-facing filtering removes all findings", () => {
+    const sdkUsage = {
+      schemaVersion: 1,
+      analysisVersion: "1",
+      inputKind: "artifact",
+      status: "complete",
+      entries: [
+        {
+          key: "sdk-export:openclaw/plugin-sdk/core#definePluginEntry",
+          kind: "sdk-export",
+          identity: "openclaw/plugin-sdk/core#definePluginEntry",
+          classification: "runtime",
+          referenceKinds: ["import"],
+          deprecationCodes: [],
+          evidence: [
+            {
+              path: "index.js",
+              line: 1,
+              snippet: 'import { definePluginEntry } from "openclaw/plugin-sdk/core";',
+            },
+          ],
+        },
+      ],
+      unknowns: [],
+      coverage: { filesDiscovered: 1, filesAnalyzed: 1, filesExcluded: 0 },
+    };
+    const result = normalizeInspectorReportForPublish({
+      sdkUsage,
+      issues: [{ code: "informational", message: "No author action" }],
+    });
+    expect(result).toMatchObject({ status: "pass", warnings: [], breakages: [], sdkUsage });
+  });
+
   it("falls back to /tmp when the configured temp directory is unavailable", async () => {
     Object.defineProperty(process, "platform", { value: "linux" });
     const attemptedPrefixes: string[] = [];
@@ -85,17 +176,18 @@ describe("package inspector publish normalization", () => {
   it("uses the prepared OpenClaw target for publish-time inspection", () => {
     const targetOpenClaw = { status: "ok", version: "2026.7.0" };
     expect(
-      buildPublishInspectorRunCheckOptions(
-        "/tmp/plugin",
-        "2026-07-30T00:00:00.000Z",
+      buildPublishInspectorRunCheckOptions("/tmp/plugin", "2026-07-30T00:00:00.000Z", {
         targetOpenClaw,
-      ),
+        sdkUsageTargetPath: "/tmp/verified-openclaw/package",
+      }),
     ).toEqual(
       expect.objectContaining({
         pluginRoot: "/tmp/plugin",
         openclawPath: false,
         targetOpenClaw,
         authorFacing: true,
+        sdkUsageInputKind: "artifact",
+        sdkUsageTargetPath: "/tmp/verified-openclaw/package",
       }),
     );
   });

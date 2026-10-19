@@ -4,8 +4,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { v } from "convex/values";
+import rootPackageJson from "../package.json";
 import { internalAction } from "./_generated/server";
-import { prepareOpenClawInspectorTarget } from "./lib/openClawInspectorTarget";
+import {
+  prepareOpenClawInspectorTarget,
+  type PreparedOpenClawInspectorTarget,
+} from "./lib/openClawInspectorTarget";
+import { normalizeSdkUsageReport, sdkUsageReport } from "./lib/packageSdkUsageContract";
+import { pluginApiRetirement } from "./lib/pluginApiRetirements";
 
 type InspectorFinding = {
   id?: string;
@@ -15,6 +21,9 @@ type InspectorFinding = {
   issueClass?: string;
   compatStatus?: string;
   deprecated?: boolean;
+  deprecatedApi?: string;
+  replacement?: string;
+  removeAfter?: string;
   message: string;
   evidence?: string[];
   authorRemediation?: InspectorAuthorRemediation;
@@ -28,6 +37,7 @@ type InspectorAuthorRemediation = {
 };
 
 type InspectorReport = {
+  sdkUsage?: unknown;
   status?: string;
   targetOpenClaw?: unknown;
   summary?: {
@@ -115,6 +125,9 @@ const findingValidator = v.object({
   issueClass: v.optional(v.string()),
   compatStatus: v.optional(v.string()),
   deprecated: v.optional(v.boolean()),
+  deprecatedApi: v.optional(v.string()),
+  replacement: v.optional(v.string()),
+  removeAfter: v.optional(v.string()),
   message: v.string(),
   evidence: v.optional(v.array(v.string())),
   authorRemediation: v.optional(
@@ -135,20 +148,23 @@ const inspectorMetadataValidator = v.object({
 export function buildPublishInspectorRunCheckOptions(
   root: string,
   generatedAt: string,
-  targetOpenClaw: unknown,
+  preparedTarget: PreparedOpenClawInspectorTarget,
 ) {
   return {
     pluginRoot: root,
     openclawPath: false,
-    targetOpenClaw,
+    targetOpenClaw: preparedTarget.targetOpenClaw,
+    sdkUsageTargetPath: preparedTarget.sdkUsageTargetPath,
     outDir: "reports",
     capture: false,
     mockSdk: true,
     allowExecution: false,
     authorFacing: true,
+    sdkUsageInputKind: "artifact",
     generatedAt,
   } as Parameters<(typeof import("@openclaw/plugin-inspector"))["pluginRoot"]["runCheck"]>[0] & {
     authorFacing: true;
+    sdkUsageInputKind: "artifact";
     generatedAt: string;
   };
 }
@@ -210,6 +226,7 @@ export const runPackageInspectorForPublishInternal = internalAction({
     breakages: v.array(findingValidator),
     warnings: v.array(findingValidator),
     metadata: inspectorMetadataValidator,
+    sdkUsage: v.optional(sdkUsageReport),
   }),
   handler: async (ctx, args) => {
     let workspaceRoot: string | undefined;
@@ -255,7 +272,7 @@ export const runPackageInspectorForPublishInternal = internalAction({
 
       const { openClawTargets, pluginRoot, reports } = await import("@openclaw/plugin-inspector");
       enterStage("OpenClaw target preparation");
-      const targetOpenClaw = await prepareOpenClawInspectorTarget(
+      const preparedTarget = await prepareOpenClawInspectorTarget(
         await resolveOpenClawTargetCacheRoot(),
         {
           readTargetSurface: (options) => reports.readOpenClawTargetSurface(options),
@@ -265,7 +282,7 @@ export const runPackageInspectorForPublishInternal = internalAction({
       const runCheckOptions = buildPublishInspectorRunCheckOptions(
         root,
         new Date().toISOString(),
-        targetOpenClaw,
+        preparedTarget,
       );
       enterStage("inspection");
       const { report } = await pluginRoot.runCheck(runCheckOptions);
@@ -381,6 +398,9 @@ export function normalizeInspectorReportForPublish(report: unknown) {
     },
     breakages,
     warnings,
+    ...(parsed.sdkUsage !== undefined
+      ? { sdkUsage: normalizeSdkUsageReport(parsed.sdkUsage) }
+      : {}),
     metadata: {
       inspectorVersion: getBundledInspectorVersion(),
       targetOpenClawVersion: extractTargetOpenClawVersion(parsed.targetOpenClaw),
@@ -419,6 +439,9 @@ function normalizeFinding(value: unknown, defaultLevel: string): InspectorFindin
     issueClass: stringValue(value.issueClass),
     compatStatus: stringValue(value.compatStatus),
     deprecated: typeof value.deprecated === "boolean" ? value.deprecated : undefined,
+    deprecatedApi: stringValue(value.deprecatedApi),
+    replacement: stringValue(value.replacement),
+    removeAfter: stringValue(value.removeAfter),
     message,
     evidence: Array.isArray(value.evidence)
       ? value.evidence.map((entry) => String(entry)).slice(0, 12)
@@ -441,7 +464,7 @@ function normalizeAuthorRemediation(value: unknown): InspectorAuthorRemediation 
 }
 
 function hasAuthorRemediation(finding: InspectorFinding) {
-  return Boolean(finding.authorRemediation?.summary);
+  return Boolean(finding.authorRemediation?.summary || pluginApiRetirement(finding));
 }
 
 function legacyAuthorRemediation(code: string): InspectorAuthorRemediation | undefined {
@@ -467,7 +490,10 @@ function stringValue(value: unknown) {
 }
 
 function getBundledInspectorVersion() {
-  return stringValue(process.env.CLAWHUB_PLUGIN_INSPECTOR_VERSION);
+  return (
+    stringValue(process.env.CLAWHUB_PLUGIN_INSPECTOR_VERSION) ??
+    rootPackageJson.dependencies["@openclaw/plugin-inspector"]
+  );
 }
 
 function extractTargetOpenClawVersion(targetOpenClaw: unknown) {

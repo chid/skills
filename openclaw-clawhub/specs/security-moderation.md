@@ -593,6 +593,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   file. Missing or mismatched inspection receipts fail the judge and use the
   normal scan failure/retry lifecycle; a low-confidence verdict cannot replace
   successful artifact inspection.
+- Manual prepublication recovery uses the existing Blacksmith runner or pinned
+  GitHub-hosted Ubuntu 22.04. Ubuntu 24.04 fails the current judge's nested
+  bubblewrap setup with `RTM_NEWADDR: Operation not permitted`; switching to
+  `ubuntu-latest` must require a passing real judge inspection proof first.
+  Recovery must preserve the read-only judge sandbox and inspection receipt checks.
 - Every worker run publishes a GitHub Actions summary and uploads a structured
   summary with its secret-scanned diagnostics. The summary reports ClawScan
   completions, failures, timeouts, scanner-stage and judge-stage failures,
@@ -660,8 +665,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   decisions off `ok`, `decision`, `reasons`, and `security.status` instead of
   re-deriving trust from individual signal payloads.
 - Skill Card completion owns a newly stored card until its attachment mutation succeeds. If attachment rejects a stale lease or unavailable version, delete only that new blob and preserve the original error if cleanup fails. Successful replacement retains prior card blobs and generated bundle fingerprints so existing installs remain resolvable.
-- Skill Card workers default to GPT-6 Sol with medium reasoning and the fast service
-  tier. Recipe-hash claims remain inactive until the separate activation after
+- Skill Card workers default to GPT-6 Luna with medium reasoning and the Standard
+  service tier. Recipe-hash claims remain inactive until the separate activation after
   [backend deployment](deploy.md). Once activated, the backend binds each lease before
   generation to the source file hashes,
   server evidence, and worker recipe (model, effort, tier, prompt, template, and

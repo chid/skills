@@ -26,8 +26,6 @@ import { Route as StarsRouteImport } from './routes/stars'
 import { Route as UploadRouteImport } from './routes/upload'
 import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
 import { Route as AuthDocsRouteImport } from './routes/auth/docs'
-import { Route as ClawsIndexRouteImport } from './routes/claws/index'
-import { Route as ClawsNameRouteImport } from './routes/claws/$name'
 import { Route as CliAuthRouteImport } from './routes/cli/auth'
 import { Route as CliDeviceRouteImport } from './routes/cli/device'
 import { Route as OfficialIndexRouteImport } from './routes/official/index'
@@ -48,6 +46,7 @@ import { Route as UserHandleRouteImport } from './routes/user/$handle'
 import { Route as UsersIndexRouteImport } from './routes/users/index'
 import { Route as OwnerSlugSecurityAuditRouteImport } from './routes/$owner/$slug/security-audit'
 import { Route as OwnerSlugSettingsRouteImport } from './routes/$owner/$slug/settings'
+import { Route as OwnerClawsSlugRouteImport } from './routes/$owner/claws/$slug'
 import { Route as OwnerPluginsSlugRouteImport } from './routes/$owner/plugins/$slug'
 import { Route as OwnerSkillsSlugRouteImport } from './routes/$owner/skills/$slug'
 import { Route as PackagesScopeNameRouteImport } from './routes/packages/$scope/$name'
@@ -150,16 +149,6 @@ const AuthDocsRoute = AuthDocsRouteImport.update({
   path: '/auth/docs',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ClawsIndexRoute = ClawsIndexRouteImport.update({
-  id: '/claws/',
-  path: '/claws/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ClawsNameRoute = ClawsNameRouteImport.update({
-  id: '/claws/$name',
-  path: '/claws/$name',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const CliAuthRoute = CliAuthRouteImport.update({
   id: '/cli/auth',
   path: '/cli/auth',
@@ -259,6 +248,11 @@ const OwnerSlugSettingsRoute = OwnerSlugSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
   getParentRoute: () => OwnerSlugRoute,
+} as any)
+const OwnerClawsSlugRoute = OwnerClawsSlugRouteImport.update({
+  id: '/$owner/claws/$slug',
+  path: '/$owner/claws/$slug',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const OwnerPluginsSlugRoute = OwnerPluginsSlugRouteImport.update({
   id: '/$owner/plugins/$slug',
@@ -369,7 +363,6 @@ export interface FileRoutesByFullPath {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/auth/docs': typeof AuthDocsRoute
-  '/claws/$name': typeof ClawsNameRoute
   '/cli/auth': typeof CliAuthRoute
   '/cli/device': typeof CliDeviceRoute
   '/orgs/$handle': typeof OrgsHandleRoute
@@ -382,7 +375,6 @@ export interface FileRoutesByFullPath {
   '/skills/publish': typeof SkillsPublishRoute
   '/u/$handle': typeof UHandleRoute
   '/user/$handle': typeof UserHandleRoute
-  '/claws/': typeof ClawsIndexRoute
   '/official/': typeof OfficialIndexRoute
   '/packages/': typeof PackagesIndexRoute
   '/plugins/': typeof PluginsIndexRoute
@@ -391,6 +383,7 @@ export interface FileRoutesByFullPath {
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/security-audit': typeof OwnerSlugSecurityAuditRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
+  '/$owner/claws/$slug': typeof OwnerClawsSlugRoute
   '/$owner/plugins/$slug': typeof OwnerPluginsSlugRouteWithChildren
   '/$owner/skills/$slug': typeof OwnerSkillsSlugRouteWithChildren
   '/packages/$scope/$name': typeof PackagesScopeNameRoute
@@ -426,7 +419,6 @@ export interface FileRoutesByTo {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/auth/docs': typeof AuthDocsRoute
-  '/claws/$name': typeof ClawsNameRoute
   '/cli/auth': typeof CliAuthRoute
   '/cli/device': typeof CliDeviceRoute
   '/orgs/$handle': typeof OrgsHandleRoute
@@ -439,7 +431,6 @@ export interface FileRoutesByTo {
   '/skills/publish': typeof SkillsPublishRoute
   '/u/$handle': typeof UHandleRoute
   '/user/$handle': typeof UserHandleRoute
-  '/claws': typeof ClawsIndexRoute
   '/official': typeof OfficialIndexRoute
   '/packages': typeof PackagesIndexRoute
   '/plugins': typeof PluginsIndexRoute
@@ -448,6 +439,7 @@ export interface FileRoutesByTo {
   '/users': typeof UsersIndexRoute
   '/$owner/$slug/security-audit': typeof OwnerSlugSecurityAuditRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
+  '/$owner/claws/$slug': typeof OwnerClawsSlugRoute
   '/$owner/plugins/$slug': typeof OwnerPluginsSlugRouteWithChildren
   '/$owner/skills/$slug': typeof OwnerSkillsSlugRouteWithChildren
   '/packages/$scope/$name': typeof PackagesScopeNameRoute
@@ -484,7 +476,6 @@ export interface FileRoutesById {
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/auth/docs': typeof AuthDocsRoute
-  '/claws/$name': typeof ClawsNameRoute
   '/cli/auth': typeof CliAuthRoute
   '/cli/device': typeof CliDeviceRoute
   '/orgs/$handle': typeof OrgsHandleRoute
@@ -497,7 +488,6 @@ export interface FileRoutesById {
   '/skills/publish': typeof SkillsPublishRoute
   '/u/$handle': typeof UHandleRoute
   '/user/$handle': typeof UserHandleRoute
-  '/claws/': typeof ClawsIndexRoute
   '/official/': typeof OfficialIndexRoute
   '/packages/': typeof PackagesIndexRoute
   '/plugins/': typeof PluginsIndexRoute
@@ -506,6 +496,7 @@ export interface FileRoutesById {
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/security-audit': typeof OwnerSlugSecurityAuditRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
+  '/$owner/claws/$slug': typeof OwnerClawsSlugRoute
   '/$owner/plugins/$slug': typeof OwnerPluginsSlugRouteWithChildren
   '/$owner/skills/$slug': typeof OwnerSkillsSlugRouteWithChildren
   '/packages/$scope/$name': typeof PackagesScopeNameRoute
@@ -543,7 +534,6 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/auth/docs'
-    | '/claws/$name'
     | '/cli/auth'
     | '/cli/device'
     | '/orgs/$handle'
@@ -556,7 +546,6 @@ export interface FileRouteTypes {
     | '/skills/publish'
     | '/u/$handle'
     | '/user/$handle'
-    | '/claws/'
     | '/official/'
     | '/packages/'
     | '/plugins/'
@@ -565,6 +554,7 @@ export interface FileRouteTypes {
     | '/users/'
     | '/$owner/$slug/security-audit'
     | '/$owner/$slug/settings'
+    | '/$owner/claws/$slug'
     | '/$owner/plugins/$slug'
     | '/$owner/skills/$slug'
     | '/packages/$scope/$name'
@@ -600,7 +590,6 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/auth/docs'
-    | '/claws/$name'
     | '/cli/auth'
     | '/cli/device'
     | '/orgs/$handle'
@@ -613,7 +602,6 @@ export interface FileRouteTypes {
     | '/skills/publish'
     | '/u/$handle'
     | '/user/$handle'
-    | '/claws'
     | '/official'
     | '/packages'
     | '/plugins'
@@ -622,6 +610,7 @@ export interface FileRouteTypes {
     | '/users'
     | '/$owner/$slug/security-audit'
     | '/$owner/$slug/settings'
+    | '/$owner/claws/$slug'
     | '/$owner/plugins/$slug'
     | '/$owner/skills/$slug'
     | '/packages/$scope/$name'
@@ -657,7 +646,6 @@ export interface FileRouteTypes {
     | '/upload'
     | '/$owner/$slug'
     | '/auth/docs'
-    | '/claws/$name'
     | '/cli/auth'
     | '/cli/device'
     | '/orgs/$handle'
@@ -670,7 +658,6 @@ export interface FileRouteTypes {
     | '/skills/publish'
     | '/u/$handle'
     | '/user/$handle'
-    | '/claws/'
     | '/official/'
     | '/packages/'
     | '/plugins/'
@@ -679,6 +666,7 @@ export interface FileRouteTypes {
     | '/users/'
     | '/$owner/$slug/security-audit'
     | '/$owner/$slug/settings'
+    | '/$owner/claws/$slug'
     | '/$owner/plugins/$slug'
     | '/$owner/skills/$slug'
     | '/packages/$scope/$name'
@@ -715,7 +703,6 @@ export interface RootRouteChildren {
   UploadRoute: typeof UploadRoute
   OwnerSlugRoute: typeof OwnerSlugRouteWithChildren
   AuthDocsRoute: typeof AuthDocsRoute
-  ClawsNameRoute: typeof ClawsNameRoute
   CliAuthRoute: typeof CliAuthRoute
   CliDeviceRoute: typeof CliDeviceRoute
   OrgsHandleRoute: typeof OrgsHandleRoute
@@ -728,13 +715,13 @@ export interface RootRouteChildren {
   SkillsPublishRoute: typeof SkillsPublishRoute
   UHandleRoute: typeof UHandleRoute
   UserHandleRoute: typeof UserHandleRoute
-  ClawsIndexRoute: typeof ClawsIndexRoute
   OfficialIndexRoute: typeof OfficialIndexRoute
   PackagesIndexRoute: typeof PackagesIndexRoute
   PluginsIndexRoute: typeof PluginsIndexRoute
   PublishersIndexRoute: typeof PublishersIndexRoute
   SkillsIndexRoute: typeof SkillsIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
+  OwnerClawsSlugRoute: typeof OwnerClawsSlugRoute
   OwnerPluginsSlugRoute: typeof OwnerPluginsSlugRouteWithChildren
   OwnerSkillsSlugRoute: typeof OwnerSkillsSlugRouteWithChildren
   PackagesScopeNameRoute: typeof PackagesScopeNameRoute
@@ -861,20 +848,6 @@ declare module '@tanstack/react-router' {
       path: '/auth/docs'
       fullPath: '/auth/docs'
       preLoaderRoute: typeof AuthDocsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/claws/': {
-      id: '/claws/'
-      path: '/claws'
-      fullPath: '/claws/'
-      preLoaderRoute: typeof ClawsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/claws/$name': {
-      id: '/claws/$name'
-      path: '/claws/$name'
-      fullPath: '/claws/$name'
-      preLoaderRoute: typeof ClawsNameRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cli/auth': {
@@ -1016,6 +989,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/$owner/$slug/settings'
       preLoaderRoute: typeof OwnerSlugSettingsRouteImport
       parentRoute: typeof OwnerSlugRoute
+    }
+    '/$owner/claws/$slug': {
+      id: '/$owner/claws/$slug'
+      path: '/$owner/claws/$slug'
+      fullPath: '/$owner/claws/$slug'
+      preLoaderRoute: typeof OwnerClawsSlugRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/$owner/plugins/$slug': {
       id: '/$owner/plugins/$slug'
@@ -1225,7 +1205,6 @@ const rootRouteChildren: RootRouteChildren = {
   UploadRoute: UploadRoute,
   OwnerSlugRoute: OwnerSlugRouteWithChildren,
   AuthDocsRoute: AuthDocsRoute,
-  ClawsNameRoute: ClawsNameRoute,
   CliAuthRoute: CliAuthRoute,
   CliDeviceRoute: CliDeviceRoute,
   OrgsHandleRoute: OrgsHandleRoute,
@@ -1238,13 +1217,13 @@ const rootRouteChildren: RootRouteChildren = {
   SkillsPublishRoute: SkillsPublishRoute,
   UHandleRoute: UHandleRoute,
   UserHandleRoute: UserHandleRoute,
-  ClawsIndexRoute: ClawsIndexRoute,
   OfficialIndexRoute: OfficialIndexRoute,
   PackagesIndexRoute: PackagesIndexRoute,
   PluginsIndexRoute: PluginsIndexRoute,
   PublishersIndexRoute: PublishersIndexRoute,
   SkillsIndexRoute: SkillsIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
+  OwnerClawsSlugRoute: OwnerClawsSlugRoute,
   OwnerPluginsSlugRoute: OwnerPluginsSlugRouteWithChildren,
   OwnerSkillsSlugRoute: OwnerSkillsSlugRouteWithChildren,
   PackagesScopeNameRoute: PackagesScopeNameRoute,

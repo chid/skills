@@ -14500,208 +14500,172 @@ describe("packages public queries", () => {
     expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])(
-    "defers author warnings without embedding large inventories (inventory: %s)",
-    async (withInventory) => {
-      const sdkUsage = withInventory
-        ? {
-            schemaVersion: 1,
-            analysisVersion: "1",
-            inputKind: "artifact",
-            status: "complete",
-            entries: Array.from({ length: 1000 }, (_, i) => ({
-              key: `api-member:api.method${i}`,
-              kind: "api-member",
-              identity: `api.method${i}`,
-              classification: "runtime",
-              referenceKinds: ["call"],
-              deprecationCodes: [],
-              evidence: Array.from({ length: 3 }, () => ({
-                path: "index.js",
-                line: 1,
-                snippet: "x".repeat(500),
-              })),
-            })),
-            unknowns: [],
-            coverage: { filesDiscovered: 1, filesAnalyzed: 1, filesExcluded: 0 },
-          }
-        : undefined;
-      const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
-        if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
-        if ("minimumRole" in args) return null;
-        if ("warnings" in args) return { ok: true, inserted: 1 };
-        return { ok: true, packageId: "packages:demo", releaseId: "packageReleases:demo-1" };
-      });
-      const ctx = {
-        runQuery: vi
-          .fn()
-          .mockResolvedValueOnce(null)
-          .mockResolvedValueOnce({
-            _id: "users:owner",
-            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-          })
-          .mockResolvedValueOnce({
-            _id: "users:owner",
-            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-          })
-          .mockResolvedValueOnce(null),
-        runMutation,
-        runAction: makePublishRunActionMock(() => ({
-          ...(sdkUsage ? { sdkUsage } : {}),
-          status: "pass",
-          summary: {
-            breakageCount: 0,
-            warningCount: 1,
-            deprecationWarningCount: 1,
-            issueCount: 1,
-          },
-          warnings: [
-            {
-              id: "demo:legacy-before-agent-start",
-              code: "legacy-before-agent-start",
-              severity: "P2",
-              issueClass: "deprecation-warning",
-              compatStatus: "deprecated",
-              message: "legacy before_agent_start hook is deprecated",
-              evidence: ["src/index.ts:4"],
-              authorRemediation: {
-                summary: "Move prompt mutation work to before_prompt_build.",
-                docsUrl:
-                  "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
-              },
-            },
-          ],
-          metadata: {
-            inspectorVersion: "0.3.19",
-            targetOpenClawVersion: "2026.7.1-2",
-          },
-        })),
-        scheduler: {
-          runAfter: vi.fn(),
+  it("defers author warnings and leaves SDK inventories to the Package Inspector scan", async () => {
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
+      if ("minimumRole" in args) return null;
+      if ("warnings" in args) return { ok: true, inserted: 1 };
+      return { ok: true, packageId: "packages:demo", releaseId: "packageReleases:demo-1" };
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce(null),
+      runMutation,
+      runAction: makePublishRunActionMock(() => ({
+        status: "pass",
+        summary: {
+          breakageCount: 0,
+          warningCount: 1,
+          deprecationWarningCount: 1,
+          issueCount: 1,
         },
-        storage: {
-          get: vi.fn(async (storageId: string) => {
-            const files = new Map<string, string>([
-              [
-                "storage:package",
-                JSON.stringify({
-                  name: "demo-plugin",
-                  openclaw: {
-                    extensions: ["./dist/index.js"],
-                    compat: { pluginApi: "^1.0.0" },
-                    build: { openclawVersion: "2026.3.14" },
-                    configSchema: { type: "object" },
-                  },
-                }),
-              ],
-              ["storage:manifest", JSON.stringify({ id: "demo.plugin" })],
-              ["storage:code", "export const demo = true;\n"],
-            ]);
-            const content = files.get(storageId);
-            return content ? new Blob([content]) : null;
-          }),
-          store: vi.fn(async (blob: Blob) =>
-            blob.type === "application/json" ? "storage:inventory" : "storage:legacy-zip",
-          ),
-        },
-      };
-
-      await publishPackageForUserInternalHandler(ctx as never, {
-        actorUserId: "users:owner",
-        payload: {
-          name: "demo-plugin",
-          displayName: "Demo Plugin",
-          family: "code-plugin",
-          version: "1.0.0",
-          changelog: "init",
-          source: {
-            kind: "github",
-            url: "https://github.com/openclaw/demo-plugin",
-            repo: "openclaw/demo-plugin",
-            ref: "refs/tags/v1.0.0",
-            commit: "abc123",
-            path: ".",
-            importedAt: Date.now(),
+        warnings: [
+          {
+            id: "demo:legacy-before-agent-start",
+            code: "legacy-before-agent-start",
+            severity: "P2",
+            issueClass: "deprecation-warning",
+            compatStatus: "deprecated",
+            message: "legacy before_agent_start hook is deprecated",
+            evidence: ["src/index.ts:4"],
+            authorRemediation: {
+              summary: "Move prompt mutation work to before_prompt_build.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+            },
           },
-          files: [
-            {
-              path: "package.json",
-              size: 1,
-              storageId: "storage:package",
-              sha256: "package",
-              contentType: "application/json",
-            },
-            {
-              path: "openclaw.plugin.json",
-              size: 1,
-              storageId: "storage:manifest",
-              sha256: "manifest",
-              contentType: "application/json",
-            },
-            {
-              path: "dist/index.js",
-              size: 1,
-              storageId: "storage:code",
-              sha256: "code",
-              contentType: "application/javascript",
-            },
-          ],
+        ],
+        metadata: {
+          inspectorVersion: "0.3.19",
+          targetOpenClawVersion: "2026.7.1-2",
         },
-      });
-
-      // Warnings are stored for the release only after it passes the pre-publication checks.
-      expect(
-        runMutation.mock.calls.some(
-          ([, args]) =>
-            typeof args === "object" &&
-            args !== null &&
-            Array.isArray((args as { findings?: unknown[] }).findings),
+      })),
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const files = new Map<string, string>([
+            [
+              "storage:package",
+              JSON.stringify({
+                name: "demo-plugin",
+                openclaw: {
+                  extensions: ["./dist/index.js"],
+                  compat: { pluginApi: "^1.0.0" },
+                  build: { openclawVersion: "2026.3.14" },
+                  configSchema: { type: "object" },
+                },
+              }),
+            ],
+            ["storage:manifest", JSON.stringify({ id: "demo.plugin" })],
+            ["storage:code", "export const demo = true;\n"],
+          ]);
+          const content = files.get(storageId);
+          return content ? new Blob([content]) : null;
+        }),
+        store: vi.fn(async (blob: Blob) =>
+          blob.type === "application/json" ? "storage:inventory" : "storage:legacy-zip",
         ),
-      ).toBe(false);
-      const attemptCall = runMutation.mock.calls.find(([, args]) =>
-        isPackagePublishAttemptArgs(args),
-      );
-      const followup = attemptCall?.[1].packageFollowup as Record<string, unknown>;
-      expect(followup.inspectorSdkUsage).toBeUndefined();
-      expect(followup.inspectorSdkUsageStorageId).toBe(
-        withInventory ? "storage:inventory" : undefined,
-      );
-      expect(new TextEncoder().encode(JSON.stringify(attemptCall?.[1])).byteLength).toBeLessThan(
-        1024 * 1024,
-      );
-      if (withInventory) {
-        const blob = ctx.storage.store.mock.calls.find(
-          ([value]) => value.type === "application/json",
-        )?.[0];
-        expect(blob?.size).toBeGreaterThan(1024 * 1024);
-        expect(JSON.parse(await blob!.text())).toEqual(sdkUsage);
-      }
-      expect(attemptCall?.[1]).toMatchObject({
-        packageId: "packages:demo",
-        packageReleaseId: "packageReleases:demo-1",
-        packageFollowup: {
-          packageName: "demo-plugin",
-          version: "1.0.0",
-          inspectorMetadata: {
-            inspectorVersion: "0.3.19",
-            targetOpenClawVersion: "2026.7.1-2",
-          },
-          inspectorWarnings: [
-            expect.objectContaining({
-              code: "legacy-before-agent-start",
-              issueClass: "deprecation-warning",
-              message: "legacy before_agent_start hook is deprecated",
-              authorRemediation: {
-                summary: "Move prompt mutation work to before_prompt_build.",
-                docsUrl:
-                  "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
-              },
-            }),
-          ],
+      },
+    };
+
+    await publishPackageForUserInternalHandler(ctx as never, {
+      actorUserId: "users:owner",
+      payload: {
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        source: {
+          kind: "github",
+          url: "https://github.com/openclaw/demo-plugin",
+          repo: "openclaw/demo-plugin",
+          ref: "refs/tags/v1.0.0",
+          commit: "abc123",
+          path: ".",
+          importedAt: Date.now(),
         },
-      });
-    },
-  );
+        files: [
+          {
+            path: "package.json",
+            size: 1,
+            storageId: "storage:package",
+            sha256: "package",
+            contentType: "application/json",
+          },
+          {
+            path: "openclaw.plugin.json",
+            size: 1,
+            storageId: "storage:manifest",
+            sha256: "manifest",
+            contentType: "application/json",
+          },
+          {
+            path: "dist/index.js",
+            size: 1,
+            storageId: "storage:code",
+            sha256: "code",
+            contentType: "application/javascript",
+          },
+        ],
+      },
+    });
+
+    // Warnings are stored for the release only after it passes the pre-publication checks.
+    expect(
+      runMutation.mock.calls.some(
+        ([, args]) =>
+          typeof args === "object" &&
+          args !== null &&
+          Array.isArray((args as { findings?: unknown[] }).findings),
+      ),
+    ).toBe(false);
+    const attemptCall = runMutation.mock.calls.find(([, args]) =>
+      isPackagePublishAttemptArgs(args),
+    );
+    const followup = attemptCall?.[1].packageFollowup as Record<string, unknown>;
+    expect(followup.inspectorSdkUsage).toBeUndefined();
+    expect(followup.inspectorSdkUsageStorageId).toBeUndefined();
+    expect(ctx.storage.store.mock.calls.some(([value]) => value.type === "application/json")).toBe(
+      false,
+    );
+    expect(attemptCall?.[1]).toMatchObject({
+      packageId: "packages:demo",
+      packageReleaseId: "packageReleases:demo-1",
+      packageFollowup: {
+        packageName: "demo-plugin",
+        version: "1.0.0",
+        inspectorMetadata: {
+          inspectorVersion: "0.3.19",
+          targetOpenClawVersion: "2026.7.1-2",
+        },
+        inspectorWarnings: [
+          expect.objectContaining({
+            code: "legacy-before-agent-start",
+            issueClass: "deprecation-warning",
+            message: "legacy before_agent_start hook is deprecated",
+            authorRemediation: {
+              summary: "Move prompt mutation work to before_prompt_build.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+            },
+          }),
+        ],
+      },
+    });
+  });
 
   it("deduplicates plugin inspector warnings when an idempotent publish retry returns an existing release", async () => {
     const insert = vi.fn();
@@ -21724,7 +21688,7 @@ describe("restorePackageInternal", () => {
     }
   });
 
-  it("discovers only @openclaw-owned Claws in package list and search", async () => {
+  it("hides Claws with missing publishers from package list and search", async () => {
     const otherOfficial = makeDigest("@other/matching-claw", {
       family: "claw",
       channel: "official",
@@ -21833,7 +21797,7 @@ describe("restorePackageInternal", () => {
     },
   );
 
-  it("hides a Claw from the catalog when @openclaw loses Official status", async () => {
+  it("keeps active Claws discoverable without a publisher Official badge", async () => {
     const pkg = makeOpenClawClawPackageDoc();
     const { ctx: namedCtx } = makePackageCtx({
       pkg,
@@ -21862,13 +21826,13 @@ describe("restorePackageInternal", () => {
       family: "claw",
       paginationOpts: { cursor: null, numItems: 10 },
     });
-    expect(listed.page).toEqual([]);
+    expect(listed.page).toMatchObject([{ name: pkg.name, ownerOfficial: false }]);
     const searched = await searchPublicHandler(discoveryCtx, {
       query: "demo-claw",
       family: "claw",
       limit: 10,
     });
-    expect(searched).toEqual([]);
+    expect(searched).toMatchObject([{ package: { name: pkg.name, ownerOfficial: false } }]);
   });
 
   it("lists an @openclaw Claw beyond a first page of hidden legacy Claws", async () => {
@@ -22018,36 +21982,42 @@ describe("restorePackageInternal", () => {
     expect(paginate).not.toHaveBeenCalled();
   });
 
-  it("recalls stable package families when hidden Claws exhaust the unfiltered search window", async () => {
-    const hidden = Array.from({ length: 50 }, (_, index) =>
-      makeDigest(`@other/legacy-${index}`, {
-        family: "claw",
-        displayName: `Legacy ${index}`,
-        summary: "assistant",
-        ownerPublisherId: "publishers:other",
-        ownerHandle: "other",
-        ownerKind: "org",
-      }),
-    );
-    const stable = ["skill", "code-plugin", "bundle-plugin"].map((family) =>
-      makeDigest(`${family}-assistant`, {
-        family,
-        displayName: `${family} package`,
-        summary: "assistant",
-      }),
-    );
-    const { ctx } = makeDigestCtx({
-      pages: [{ page: [...hidden, ...stable], isDone: true, continueCursor: "" }],
-      officialDigests: [],
-    });
+  it.each([false, true])(
+    "recalls stable package families when Claws exhaust the unfiltered search window (active publisher=%s)",
+    async (activePublisher) => {
+      const hidden = Array.from({ length: 50 }, (_, index) =>
+        makeDigest(`@other/legacy-${index}`, {
+          family: "claw",
+          displayName: `Legacy ${index}`,
+          summary: activePublisher ? "unrelated" : "assistant",
+          ownerPublisherId: "publishers:other",
+          ownerHandle: "other",
+          ownerKind: "org",
+        }),
+      );
+      const stable = ["skill", "code-plugin", "bundle-plugin"].map((family) =>
+        makeDigest(`${family}-assistant`, {
+          family,
+          displayName: `${family} package`,
+          summary: "assistant",
+        }),
+      );
+      const { ctx } = makeDigestCtx({
+        pages: [{ page: [...hidden, ...stable], isDone: true, continueCursor: "" }],
+        officialDigests: [],
+        publisherDocs: activePublisher
+          ? { "publishers:other": { _id: "publishers:other", kind: "org", handle: "other" } }
+          : {},
+      });
 
-    const result = await searchPublicHandler(ctx, { query: "assistant", limit: 10 });
-    expect(result.map((entry) => entry.package.name).sort((a, b) => a.localeCompare(b))).toEqual(
-      stable.map((digest) => String(digest.name)).sort((a, b) => a.localeCompare(b)),
-    );
-  });
+      const result = await searchPublicHandler(ctx, { query: "assistant", limit: 10 });
+      expect(result.map((entry) => entry.package.name).sort((a, b) => a.localeCompare(b))).toEqual(
+        stable.map((digest) => String(digest.name)).sort((a, b) => a.localeCompare(b)),
+      );
+    },
+  );
 
-  it("hides non-OpenClaw Claws from package-backed sorted lists", async () => {
+  it("lists community Claws while hiding scope-owner mismatches in package-backed sorted lists", async () => {
     const other = makePackageDoc({
       _id: "packages:other",
       name: "@other/other-claw",
@@ -22086,10 +22056,13 @@ describe("restorePackageInternal", () => {
       sort: "downloads",
       paginationOpts: { cursor: null, numItems: 10 },
     });
-    expect(result.page.map((entry) => entry.name)).toEqual(["@openclaw/official-claw"]);
+    expect(result.page.map((entry) => entry.name)).toEqual([
+      "@other/other-claw",
+      "@openclaw/official-claw",
+    ]);
   });
 
-  it("scans sorted Claw pages past hidden legacy packages", async () => {
+  it("scans sorted Claw pages past deactivated publishers", async () => {
     const hidden = makePackageDoc({
       _id: "packages:legacy",
       name: "@other/legacy",
@@ -22104,7 +22077,12 @@ describe("restorePackageInternal", () => {
         { page: [official], isDone: true, continueCursor: "" },
       ],
       publisherDocs: {
-        "publishers:other": { _id: "publishers:other", kind: "org", handle: "other" },
+        "publishers:other": {
+          _id: "publishers:other",
+          kind: "org",
+          handle: "other",
+          deactivatedAt: 123,
+        },
         [openClawPublisher._id]: openClawPublisher,
       },
     });

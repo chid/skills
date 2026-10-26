@@ -3043,12 +3043,19 @@ def collect_untracked_file_snapshots(
     return included, omitted
 
 
-def local_status(repo: Path, untracked: list[str], *, redact: bool = False) -> str:
+def local_status(staged_raw: str, unstaged_raw: str, untracked: list[str], *, redact: bool = False) -> str:
     if redact:
         return REVIEW_SECURITY_OMISSION
-    status = git(repo, "status", "--short", "--untracked-files=no").rstrip()
-    lines = [status] if status else []
-    lines.extend(f"?? {rel}" for rel in untracked)
+    # Reuse the exact no-renames diff queues, not a fresh HEAD-relative status.
+    # The selected base may be ahead of HEAD while its tree is already staged.
+    changes: dict[str, list[str]] = {}
+    for column, raw in enumerate((staged_raw, unstaged_raw)):
+        records = raw.split("\0")
+        for metadata, path in zip(records[::2], records[1::2]):
+            changes.setdefault(path, [" ", " "])[column] = metadata.split()[-1]
+    lines = ["Columns: base -> index, index -> working_tree; ?? untracked. Paths are JSON strings."]
+    lines.extend(f"{''.join(changes[path])} {json.dumps(path)}" for path in sorted(changes))
+    lines.extend(f"?? {json.dumps(rel)}" for rel in untracked)
     return "\n".join(lines)
 
 
@@ -3256,12 +3263,14 @@ def local_bundle(repo: Path, base_ref: str | None = None) -> CapturedBundle:
     omitted_tracked = len(
         tracked_sensitive_paths(staged_paths) | tracked_sensitive_paths(unstaged_paths)
     )
-    if (
+    empty_scope = (
         not staged_patch.strip()
         and not unstaged_patch.strip()
         and not untracked
+        and not omitted_tracked
         and not omitted_untracked
-    ):
+    )
+    if empty_scope and base_ref is None:
         raise SystemExit("no local changes to review")
     staged_blocked_paths = tracked_sensitive_paths(staged_paths)
     unstaged_blocked_paths = tracked_sensitive_paths(unstaged_paths)
@@ -3286,7 +3295,8 @@ def local_bundle(repo: Path, base_ref: str | None = None) -> CapturedBundle:
     parts = [
         "# Git Status",
         local_status(
-            repo,
+            staged_raw,
+            unstaged_raw,
             untracked,
             redact=bool(omitted_tracked or omitted_untracked),
         ),
@@ -3331,6 +3341,12 @@ def local_bundle(repo: Path, base_ref: str | None = None) -> CapturedBundle:
             if rel in mixed_paths:
                 owned_parts[len(parts) - 1] = ([(rel, parts[-1])], "working_tree")
     parts.extend(part for part in (staged_links, unstaged_links) if part)
+    if empty_scope:
+        parts.append(
+            "# Selected Local Scope\n"
+            f"base: {base_ref}\n"
+            "Zero selected changes: base, index and working tree agree; no untracked inputs."
+        )
     spans = []
     offset = 0
     transitions = {"index": {}, "working_tree": {}}
@@ -8050,6 +8066,35 @@ def run_review_passes(
     return chunk_reports
 
 
+def require_output_ready(path: Path, option: str) -> None:
+    try:
+        try:
+            metadata = path.lstat()
+        except FileNotFoundError:
+            metadata = None
+        if metadata is not None and not stat.S_ISLNK(metadata.st_mode):
+            if stat.S_ISDIR(metadata.st_mode):
+                raise OSError("output destination is a directory")
+            # Windows cannot replace a read-only entry, even in a writable parent.
+            if getattr(metadata, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_READONLY:
+                raise OSError("output destination is read-only")
+        with tempfile.NamedTemporaryFile(
+            dir=path.parent, prefix=".autoreview-output-probe.", delete=False,
+        ) as handle:
+            probe = Path(handle.name)
+        try:
+            # The atomic writer needs only one free inode, even for replacement.
+            probe.unlink()
+            atomic_write_text(probe, "autoreview output preflight\n")
+        finally:
+            probe.unlink(missing_ok=True)
+    except OSError:
+        raise SystemExit(
+            f"{option} output destination is not writable: {display_escape(path, 500)}. "
+            "Choose a replaceable file in an existing writable directory and check free storage."
+        ) from None
+
+
 def prepare_output_paths(args: argparse.Namespace, repo: Path) -> None:
     """Validate all destinations, then freeze their original cwd/tilde meaning."""
     repo_root_path = repo.resolve()
@@ -8125,6 +8170,15 @@ def prepare_output_paths(args: argparse.Namespace, repo: Path) -> None:
                     key = tuple(unicodedata.normalize("NFD", part).casefold() for part in candidate.parts)
                     if key[:len(handoff_key)] == handoff_key:
                         raise SystemExit("review outputs must stay outside --native-handoff (removed on exit)")
+
+    for option, attribute in (
+        ("--json-output", "json_output"),
+        ("--output", "output"),
+        ("--status-output", "status_output"),
+        ("--preflight-output", "preflight_output"),
+    ):
+        if destination := destinations.get(attribute):
+            require_output_ready(Path(destination), option)
 
 
 def atomic_write_text(path: Path, content: str) -> None:

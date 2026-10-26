@@ -73,7 +73,6 @@ import {
   buildPackageInspectorValidationUrl,
 } from "./lib/emails";
 import { endorAnalysisSchema, endorAnalysisValidator } from "./lib/endorAnalysis";
-import { isOpenClawClawName, isOpenClawClawPublisher } from "./lib/experimentalClaws";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
@@ -116,7 +115,7 @@ import {
   sdkUsageReport,
   type SdkUsageReport,
 } from "./lib/packageSdkUsageContract";
-import { readStagedSdkUsageReport, stageSdkUsageReport } from "./lib/packageSdkUsageStorage";
+import { readStagedSdkUsageReport } from "./lib/packageSdkUsageStorage";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import {
   getPackageTrustReasons,
@@ -648,7 +647,6 @@ type PackageInspectorFinding = {
 };
 
 type PackageInspectorPublishResult = {
-  sdkUsage?: SdkUsageReport;
   status: "pass" | "fail";
   summary: {
     breakageCount: number;
@@ -1460,32 +1458,28 @@ function packageArtifactSummary(
   };
 }
 
-function isClawOutsideOpenClawPublisher(digest: PackageDigestLike) {
-  return (
-    digest.family === "claw" &&
-    (!isOpenClawClawName(digest.normalizedName) ||
-      !isOpenClawClawPublisher({ kind: digest.ownerKind, handle: digest.ownerHandle }))
-  );
-}
-
-async function isClawDigestPublisherAuthorized(
+async function isClawCatalogPublisherAvailable(
   ctx: DbReaderCtx,
-  digest: PackageDigestLike,
-  cache: Map<string, Promise<boolean>>,
+  pkg: Pick<PackageDigestLike, "family" | "normalizedName" | "ownerPublisherId">,
+  cache?: Map<Id<"publishers">, Promise<Doc<"publishers"> | null>>,
 ) {
-  if (digest.family !== "claw") return true;
-  if (isClawOutsideOpenClawPublisher(digest) || !digest.ownerPublisherId) return false;
-  const id = String(digest.ownerPublisherId);
-  let allowed = cache.get(id);
-  if (!allowed) {
-    allowed = ctx.db
-      .get(digest.ownerPublisherId)
-      .then(
-        async (owner) => isOpenClawClawPublisher(owner) && (await isOfficialPublisher(ctx, owner)),
-      );
-    cache.set(id, allowed);
+  if (pkg.family !== "claw") return true;
+  if (!pkg.ownerPublisherId) return false;
+  const publisherId = pkg.ownerPublisherId;
+  let ownerPromise = cache?.get(publisherId);
+  if (!ownerPromise) {
+    ownerPromise = ctx.db.get(publisherId);
+    cache?.set(publisherId, ownerPromise);
   }
-  return await allowed;
+  const owner = await ownerPromise;
+  // Community discovery uses the same owner/scope boundary as publication;
+  // Official status belongs to the separate official feed and trust badges.
+  return Boolean(
+    owner &&
+    owner.deletedAt === undefined &&
+    owner.deactivatedAt === undefined &&
+    !getPackageScopeOwnerMismatch(pkg.normalizedName, owner.handle),
+  );
 }
 
 function digestMatchesFilters(
@@ -1502,7 +1496,6 @@ function digestMatchesFilters(
   if (digest.softDeletedAt || !digest.latestVersion) return false;
   if (digest.channel === "private" && args.channel !== "private") return false;
   if (isPackageBlockedFromPublic(digest.scanStatus)) return false;
-  if (isClawOutsideOpenClawPublisher(digest)) return false;
   if (digest.scanStatus && args.excludedScanStatuses?.includes(digest.scanStatus)) return false;
   if (args.category) {
     if (digest.family === "claw") {
@@ -2724,7 +2717,7 @@ async function mayHaveVisiblePackageCategoryDigest(
   },
 ) {
   const membershipCache = new Map<string, Promise<boolean>>();
-  const clawPublisherCache = new Map<string, Promise<boolean>>();
+  const clawPublisherCache = new Map<Id<"publishers">, Promise<Doc<"publishers"> | null>>();
   const digests = await (
     args.topic
       ? buildPackageTopicDigestQuery(ctx, {
@@ -2751,7 +2744,7 @@ async function mayHaveVisiblePackageCategoryDigest(
     if (typeof args.isOfficial === "boolean" && digest.isOfficial !== args.isOfficial) continue;
     if (!digestMatchesFilters(digest, args)) continue;
     if (!(await canViewerReadPackage(ctx, digest, args.viewerUserId, membershipCache))) continue;
-    if (!(await isClawDigestPublisherAuthorized(ctx, digest, clawPublisherCache))) continue;
+    if (!(await isClawCatalogPublisherAvailable(ctx, digest, clawPublisherCache))) continue;
     return true;
   }
   // A saturated bounded probe cannot prove that later rows are also invisible.
@@ -2777,7 +2770,7 @@ async function takeVisiblePackageCategoryDigestPage(
     return { page: [], isDone: true, continueCursor: "" };
   }
   const membershipCache = new Map<string, Promise<boolean>>();
-  const clawPublisherCache = new Map<string, Promise<boolean>>();
+  const clawPublisherCache = new Map<Id<"publishers">, Promise<Doc<"publishers"> | null>>();
   const scanPageSize = MAX_PUBLIC_LIST_PAGE_SIZE;
   const digests = await (
     args.topic
@@ -2809,7 +2802,7 @@ async function takeVisiblePackageCategoryDigestPage(
     if (typeof args.isOfficial === "boolean" && digest.isOfficial !== args.isOfficial) continue;
     if (!digestMatchesFilters(digest, args)) continue;
     if (!(await canViewerReadPackage(ctx, digest, args.viewerUserId, membershipCache))) continue;
-    if (!(await isClawDigestPublisherAuthorized(ctx, digest, clawPublisherCache))) continue;
+    if (!(await isClawCatalogPublisherAvailable(ctx, digest, clawPublisherCache))) continue;
     page.push(await toPublicPackageListItem(ctx, digest));
     if (page.length >= targetCount) break;
   }
@@ -2990,7 +2983,7 @@ async function fetchHighlightedPackageEntries(
 ) {
   const viewerUserId = args.viewerUserId;
   const membershipCache = new Map<string, Promise<boolean>>();
-  const clawPublisherCache = new Map<string, Promise<boolean>>();
+  const clawPublisherCache = new Map<Id<"publishers">, Promise<Doc<"publishers"> | null>>();
   const badges = ctx.db
     .query("packageBadges")
     .withIndex("by_kind_at", (q) => q.eq("kind", "highlighted"))
@@ -3006,7 +2999,7 @@ async function fetchHighlightedPackageEntries(
     if (getPluginDiscoveryExclusion(digest.categories) || !isEnglishPluginListing(digest)) continue;
     if (!(await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache))) continue;
     if (!digestMatchesSearchFilters(digest, args)) continue;
-    if (!(await isClawDigestPublisherAuthorized(ctx, digest, clawPublisherCache))) continue;
+    if (!(await isClawCatalogPublisherAvailable(ctx, digest, clawPublisherCache))) continue;
     entries.push({ digest, featuredAt: badge.at });
     if (entries.length >= MAX_PUBLIC_LIST_PAGE_SIZE) break;
   }
@@ -3049,15 +3042,6 @@ async function getPackageByNormalizedName(ctx: DbReaderCtx, normalizedName: stri
     .query("packages")
     .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
     .unique()) as Doc<"packages"> | null;
-}
-
-async function isPackageAllowedInPublicClawCatalog(ctx: DbReaderCtx, pkg: Doc<"packages">) {
-  if (pkg.family !== "claw") return true;
-  if (!isOpenClawClawName(pkg.normalizedName)) return false;
-  const ownerPublisher = pkg.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
-  return (
-    isOpenClawClawPublisher(ownerPublisher) && (await isOfficialPublisher(ctx, ownerPublisher))
-  );
 }
 
 async function getReadablePackageByName(
@@ -4988,7 +4972,7 @@ async function listPackagePageImpl(
       if (getPluginDiscoveryExclusion(pkg.categories) || !isEnglishPluginListing(pkg)) continue;
       if (!(await canViewerReadPackage(ctx, pkg, viewerUserId, membershipCache))) continue;
       if (!packageMatchesListFilters(pkg, { ...args, category, topic })) continue;
-      if (!(await isPackageAllowedInPublicClawCatalog(ctx, pkg))) continue;
+      if (!(await isClawCatalogPublisherAvailable(ctx, pkg))) continue;
       page.push({
         ...(await toPublicPackageListItemFromPackage(ctx, pkg)),
         ...(currentLeaderboard &&
@@ -5064,7 +5048,7 @@ async function listPackagePageImpl(
   }
 
   const collected: PublicPackageListItem[] = [];
-  const clawPublisherCache = new Map<string, Promise<boolean>>();
+  const clawPublisherCache = new Map<Id<"publishers">, Promise<Doc<"publishers"> | null>>();
   const family = args.family;
   const channel = args.channel;
   const isOfficial = args.isOfficial;
@@ -5168,7 +5152,7 @@ async function listPackagePageImpl(
         const pkg = page.page[index];
         if (!(await canViewerReadPackage(ctx, pkg, viewerUserId, membershipCache))) continue;
         if (!packageMatchesListFilters(pkg, { ...args, category, topic })) continue;
-        if (!(await isPackageAllowedInPublicClawCatalog(ctx, pkg))) continue;
+        if (!(await isClawCatalogPublisherAvailable(ctx, pkg))) continue;
         collected.push(await toPublicPackageListItemFromPackage(ctx, pkg));
         if (collected.length >= targetCount) {
           const nextOffset = index + 1;
@@ -5273,7 +5257,7 @@ async function listPackagePageImpl(
         if (typeof isOfficial === "boolean" && digest.isOfficial !== isOfficial) {
           continue;
         }
-        if (!(await isClawDigestPublisherAuthorized(ctx, digest, clawPublisherCache))) continue;
+        if (!(await isClawCatalogPublisherAvailable(ctx, digest, clawPublisherCache))) continue;
         if (!digestMatchesFilters(digest, { ...args, category, topic })) continue;
         collected.push(await toPublicPackageListItem(ctx, digest));
         if (collected.length >= targetCount) {
@@ -5580,8 +5564,8 @@ async function searchPackagesImpl(
   const targetCount = Math.max(1, Math.min(args.limit ?? 20, 100));
   const viewerUserId = args.viewerUserId;
   const membershipCache = new Map<string, Promise<boolean>>();
-  const clawPublisherCache = new Map<string, Promise<boolean>>();
-  let skippedPolicyClaw = false;
+  const clawPublisherCache = new Map<Id<"publishers">, Promise<Doc<"publishers"> | null>>();
+  let skippedUnavailableClaw = false;
   const canViewPackage = async (digest: PackageDigestLike) =>
     await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache);
   const topic = args.topic ? normalizeCatalogTopic(args.topic) : undefined;
@@ -5702,8 +5686,8 @@ async function searchPackagesImpl(
   for (const digest of candidateDigests) {
     if (!(await canViewPackage(digest))) continue;
     if (!digestMatchesSearchFilters(digest, { ...args, topic })) continue;
-    if (!(await isClawDigestPublisherAuthorized(ctx, digest, clawPublisherCache))) {
-      skippedPolicyClaw = true;
+    if (!(await isClawCatalogPublisherAvailable(ctx, digest, clawPublisherCache))) {
+      skippedUnavailableClaw = true;
       continue;
     }
     const match = packageSearchMatch(digest, queryText);
@@ -5734,8 +5718,8 @@ async function searchPackagesImpl(
       for (const digest of digests) {
         if (!(await canViewPackage(digest))) continue;
         if (!digestMatchesSearchFilters(digest, { ...args, topic })) continue;
-        if (!(await isClawDigestPublisherAuthorized(ctx, digest, clawPublisherCache))) {
-          skippedPolicyClaw = true;
+        if (!(await isClawCatalogPublisherAvailable(ctx, digest, clawPublisherCache))) {
+          skippedUnavailableClaw = true;
           continue;
         }
         const match = packageSearchMatch(digest, queryText);
@@ -5765,11 +5749,11 @@ async function searchPackagesImpl(
     await collectDigestMatches(fallbackDigests);
     if (
       !args.family &&
-      (fallbackDigests.some(isClawOutsideOpenClawPublisher) || skippedPolicyClaw) &&
+      (fallbackDigests.some((digest) => digest.family === "claw") || skippedUnavailableClaw) &&
       authoritativeMatchCount() < targetCount
     ) {
-      // Hidden Claws may exhaust the shared candidate window before any stable
-      // package appears. Give each family its own bounded recovery window.
+      // Claws may exhaust the shared candidate window without matching the
+      // query. Give each family its own bounded recovery window.
       const recoveryGroups = await Promise.all(
         [...STABLE_PACKAGE_FAMILIES, "claw" as const].map(
           async (family) =>
@@ -9641,13 +9625,10 @@ async function publishPackageImpl(
         scanStatus: initialScanStatus,
       }
     : undefined;
-  const icon =
-    family === "claw"
-      ? undefined
-      : await resolvePackageIcon(ctx, {
-          files,
-          ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
-        });
+  const icon = await resolvePackageIcon(ctx, {
+    files,
+    ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
+  });
   const pluginManifestSummary =
     family === "claw"
       ? undefined
@@ -9777,7 +9758,6 @@ async function publishPackageImpl(
     }),
   );
 
-  const storedSdkUsage = await stageSdkUsageReport(ctx, inspectorResult?.sdkUsage);
   const staged = await runMutationRef<{
     attemptId: Id<"publishAttempts">;
     status: string;
@@ -9811,7 +9791,6 @@ async function publishPackageImpl(
       version,
       inspectorWarnings: inspectorResult?.warnings ?? [],
       inspectorMetadata: inspectorResult?.metadata,
-      ...storedSdkUsage,
       trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
       trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
       trustedPublishAuthorizationVersion:
@@ -9845,9 +9824,6 @@ async function publishPackageImpl(
           : undefined,
     }),
   }).catch(async (error) => {
-    if (storedSdkUsage.inspectorSdkUsageStorageId) {
-      await ctx.storage.delete(storedSdkUsage.inspectorSdkUsageStorageId).catch(() => undefined);
-    }
     await runMutationRef(ctx, internalRefs.packages.discardPendingPackagePublicationInternal, {
       packageId: pendingResult.packageId,
       releaseId: pendingResult.releaseId,
@@ -10407,6 +10383,8 @@ async function runPackagePublishPostFinalizeFollowups(
     };
   };
 
+  // Publishes no longer stage inventories; this applies reports staged by
+  // attempts created before that cutover until their 30-day attempt TTL.
   const inspectorSdkUsage = await readStagedSdkUsageReport(ctx, followup);
   if (
     followup.ownerUserId &&

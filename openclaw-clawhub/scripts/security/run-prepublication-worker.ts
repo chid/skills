@@ -13,14 +13,21 @@ import {
   redactWorkerPublicText,
 } from "../lib/workerRedaction";
 import {
+  clawScanExposure,
+  type ClawScanExposure,
+  noClawScanExposure,
+  summarizeClawScanExposure,
+} from "./clawscan-exposure";
+import {
   type AigAnalysis,
   assertAigFilePathsHaveNoCompiledPython,
   type ClaimedJob,
-  normalizeAigAnalysis,
   resolveClawScanTarget,
   type StoredLlmAnalysis,
+  validateClawScanArtifactForClawHubProfile,
   writeArtifactWorkspace,
 } from "./run-codex-scan-worker";
+import { securityScannerEnvironment } from "./securityModelPolicy";
 
 type ClaimedPrePublicationAttempt = {
   attemptId: Id<"publishAttempts">;
@@ -83,7 +90,12 @@ type ClawScanResult = {
 };
 
 type ProcessAttemptDeps = {
-  runClawScan?: (job: ClaimedJob, workspace: string) => Promise<ClawScanResult>;
+  onExposure?: (exposure: ClawScanExposure) => void;
+  runClawScan?: (
+    job: ClaimedJob,
+    workspace: string,
+    onExposure?: (exposure: ClawScanExposure) => void,
+  ) => Promise<ClawScanResult>;
   runTruffleHog?: (workspace: string) => Promise<TruffleHogResult>;
   writeWorkspace?: (job: ClaimedJob, workspace: string) => Promise<void>;
 };
@@ -110,18 +122,7 @@ const CHILD_RUNTIME_ENV_KEYS = [
   "COMSPEC",
   "PATHEXT",
 ] as const;
-// ClawScan's judge and scanners require these provider settings. The pinned scanner
-// process is the trust boundary; never add worker tokens or ambient endpoints.
-const CLAWSCAN_PROVIDER_ENV_KEYS = [
-  "CODEX_API_KEY",
-  "DEFAULT_BASE_URL",
-  "DEFAULT_MODEL",
-  "LLM_API_KEY",
-  "OPENAI_API_KEY",
-  "REASONING_EFFORT",
-  "SKILLSPECTOR_MODEL",
-  "SKILLSPECTOR_REASONING_EFFORT",
-] as const;
+
 const logger = createWorkerLogger({ name: "prepublication-worker" });
 
 export function parseArgs(args = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env) {
@@ -172,7 +173,11 @@ function requireEnv(name: string) {
 }
 
 function publicText(value: string, maxChars = MAX_PUBLIC_SUMMARY_CHARS) {
-  return redactWorkerPublicErrorMessage(redactWorkerPublicText(value, maxChars));
+  const withoutProgress = value.replace(
+    /\[clawscan-progress\][^\r\n]*/g,
+    "[scanner progress omitted]",
+  );
+  return redactWorkerPublicErrorMessage(redactWorkerPublicText(withoutProgress, maxChars));
 }
 
 function buildSyntheticScanJob(attempt: ClaimedPrePublicationAttempt): ClaimedJob {
@@ -435,14 +440,6 @@ function readString(record: Record<string, unknown> | undefined, names: string[]
   return undefined;
 }
 
-function verdictToStoredStatus(verdict: string | undefined): StoredLlmAnalysis["status"] {
-  const normalized = verdict?.trim().toLowerCase();
-  if (normalized === "benign" || normalized === "clean") return "clean";
-  if (normalized === "suspicious") return "suspicious";
-  if (normalized === "malicious") return "malicious";
-  return "pending";
-}
-
 function collectClawScanScannerFailures(
   scanners: Record<string, unknown> | undefined,
   scannerSet: readonly string[],
@@ -472,7 +469,6 @@ function storedAnalysisFromClawScanArtifact(
 } {
   const record = asRecord(artifact);
   const judge = asRecord(record?.judge);
-  const result = asRecord(judge?.result);
   const judgeStatus = readString(judge, ["status"]);
   const judgeError = readString(judge, ["error"]);
   const requireAig = targetKind !== "packageRelease";
@@ -498,44 +494,13 @@ function storedAnalysisFromClawScanArtifact(
         .join(", ")}`,
     };
   }
-  const verdict = readString(result, ["verdict", "status"]);
-  if (!verdict) return { error: "ClawScan judge did not return a verdict" };
-
-  const dimensions = Array.isArray(result?.dimensions)
-    ? (result.dimensions as StoredLlmAnalysis["dimensions"])
-    : undefined;
-  const confidence = readString(result, ["confidence"]);
-  const findings = readString(result, ["findings"]);
-  const guidance = readString(result, ["guidance"]);
-  const model = readString(result, ["model"]);
-  const summary = readString(result, ["summary"]);
-  const checkedAt = Date.now();
-  let aigAnalysis: AigAnalysis | undefined;
-  if (requireAig) {
-    const aig = asRecord(asRecord(record?.scanners)?.aig);
-    if (!aig || aig.raw === undefined) {
-      return { error: "ClawScan aig scanner output was missing" };
-    }
-    const rawAig = typeof aig.raw === "string" ? aig.raw : JSON.stringify(aig.raw);
-    aigAnalysis = normalizeAigAnalysis(rawAig, checkedAt);
-    if (aigAnalysis.status === "error") {
-      return { error: aigAnalysis.error ?? "A.I.G returned unusable scanner output" };
-    }
+  try {
+    if (!record) throw new Error("ClawScan artifact was missing");
+    const mapped = validateClawScanArtifactForClawHubProfile(record, requiredScanners);
+    return { aigAnalysis: mapped.aigAnalysis, analysis: mapped.llmAnalysis };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "ClawScan artifact was invalid" };
   }
-  return {
-    aigAnalysis,
-    analysis: {
-      checkedAt,
-      status: verdictToStoredStatus(verdict),
-      verdict,
-      ...(confidence ? { confidence } : {}),
-      ...(dimensions ? { dimensions } : {}),
-      ...(findings ? { findings } : {}),
-      ...(guidance ? { guidance } : {}),
-      ...(model ? { model } : {}),
-      ...(summary ? { summary } : {}),
-    },
-  };
 }
 
 function clawScanCheckResult(analysis: StoredLlmAnalysis): WorkerCheckResult {
@@ -575,6 +540,7 @@ function clawScanCheckResult(analysis: StoredLlmAnalysis): WorkerCheckResult {
 export async function runNativeClawScan(
   job: ClaimedJob,
   workspace: string,
+  onExposure?: (exposure: ClawScanExposure) => void,
 ): Promise<ClawScanResult> {
   const artifactPath = join(workspace, "clawscan-result.json");
   const target = await resolveClawScanTarget(workspace, job);
@@ -590,11 +556,22 @@ export async function runNativeClawScan(
     if (sandbox === "docker" && sandboxImage) args.push("--sandbox-image", sandboxImage);
   }
 
+  onExposure?.(clawScanExposure());
   const output = await runCommand(command, args, {
     cwd: workspace,
-    env: restrictedChildEnvironment(workspace, CLAWSCAN_PROVIDER_ENV_KEYS),
+    env: {
+      ...restrictedChildEnvironment(workspace),
+      ...securityScannerEnvironment(process.env),
+    },
     timeoutMs: clawScanTimeoutMs(),
   });
+  let artifact: unknown;
+  try {
+    artifact = JSON.parse(await readFile(artifactPath, "utf8"));
+  } catch {
+    artifact = undefined;
+  }
+  onExposure?.(clawScanExposure(artifact));
   if (output.code !== 0) {
     return {
       check: {
@@ -606,8 +583,7 @@ export async function runNativeClawScan(
     };
   }
 
-  const raw = await readFile(artifactPath, "utf8");
-  const parsed = storedAnalysisFromClawScanArtifact(JSON.parse(raw) as unknown, job.job.targetKind);
+  const parsed = storedAnalysisFromClawScanArtifact(artifact, job.job.targetKind);
   if (parsed.error || !parsed.analysis) {
     return {
       check: {
@@ -658,7 +634,24 @@ export async function processPrePublicationAttempt(
   attempt: ClaimedPrePublicationAttempt,
   deps: ProcessAttemptDeps = {},
 ) {
+  let exposure = noClawScanExposure();
+  let scanDisposition = "not_started";
+  const reportExposure = () => {
+    logger.info(
+      {
+        attemptId: attempt.attemptId,
+        event: "prepublication_attempt_exposure",
+        exposure,
+        scanDisposition,
+        kind: attempt.kind,
+      },
+      "pre-publication attempt judge exposure",
+    );
+    deps.onExposure?.(exposure);
+  };
   if (attempt.status === "ready_to_finalize") {
+    exposure = noClawScanExposure(false);
+    scanDisposition = "finalization_only";
     try {
       const result = await completeAttempt(
         client,
@@ -694,6 +687,8 @@ export async function processPrePublicationAttempt(
         "pre-publication attempt finalization retry failed",
       );
       return { completed: false, result: undefined };
+    } finally {
+      reportExposure();
     }
   }
 
@@ -714,6 +709,8 @@ export async function processPrePublicationAttempt(
     }
     const trufflehog = await runTruffleHog(workspace);
     if (trufflehog.status === "blocked") {
+      exposure = noClawScanExposure(false);
+      scanDisposition = "secret_blocked";
       truffleHogBlocked = true;
       completionStarted = true;
       const result = await completeAttempt(client, token, attempt, trufflehog, {
@@ -733,6 +730,7 @@ export async function processPrePublicationAttempt(
       return { completed: true, result };
     }
     if (trufflehog.status === "failed") {
+      scanDisposition = "secret_check_failed";
       completionStarted = true;
       const result = await completeAttempt(client, token, attempt, trufflehog, {
         status: "failed",
@@ -754,6 +752,8 @@ export async function processPrePublicationAttempt(
           existingAigAnalysis.checkedAt === existingClawscanAnalysis.checkedAt))
     ) {
       clawscanAnalysis = existingClawscanAnalysis;
+      exposure = noClawScanExposure(false);
+      scanDisposition = "exact_artifact_reuse";
       aigAnalysis = attempt.kind === "skill" ? existingAigAnalysis : undefined;
       clawscan = clawScanCheckResult(clawscanAnalysis);
       logger.info(
@@ -766,7 +766,10 @@ export async function processPrePublicationAttempt(
       );
     } else {
       try {
-        const review = await runClawScan(job, workspace);
+        scanDisposition = "new_scan";
+        const review = await runClawScan(job, workspace, (next) => {
+          exposure = next;
+        });
         clawscanAnalysis = review.analysis;
         aigAnalysis = review.aigAnalysis;
         clawscan = review.check;
@@ -857,6 +860,7 @@ export async function processPrePublicationAttempt(
     );
     return { completed: false, result };
   } finally {
+    reportExposure();
     await rm(workspace, { force: true, recursive: true });
   }
 }
@@ -946,6 +950,7 @@ async function main() {
   const claimDeadline = startedAt + maxRuntimeMs;
   let totalClaimed = 0;
   let totalCompleted = 0;
+  const exposures: ClawScanExposure[] = [];
 
   logger.info(
     {
@@ -972,7 +977,9 @@ async function main() {
     if (attempts.length === 0) break;
     totalClaimed += attempts.length;
     const results = await processPrePublicationBatch(attempts, (attempt) =>
-      processPrePublicationAttempt(client, token, attempt),
+      processPrePublicationAttempt(client, token, attempt, {
+        onExposure: (exposure) => exposures.push(exposure),
+      }),
     );
     totalCompleted += results.filter((result) => result.completed).length;
     if (claimBatchDrainedQueue(claimFailures, attempts.length, claimLimit)) break;
@@ -982,6 +989,7 @@ async function main() {
     {
       elapsedMs: Date.now() - startedAt,
       event: "prepublication_worker_summary",
+      exposure: summarizeClawScanExposure(exposures),
       totalClaimed,
       totalCompleted,
     },

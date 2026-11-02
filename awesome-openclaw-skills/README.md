@@ -169,9 +169,9 @@ If you believe a skill in this list should be flagged or has a security concern,
 | [Browser & Automation](#browser--automation) (323) | [AI & LLMs](#ai--llms) (176) | [Smart Home & IoT](#smart-home--iot) (41) |
 | [Web & Frontend Development](#web--frontend-development) (920) | [Data & Analytics](#data--analytics) (28) | [Shopping & E-commerce](#shopping--e-commerce) (51) |
 | [DevOps & Cloud](#devops--cloud) (393) | [Calendar & Scheduling](#calendar--scheduling) (66) | |
-| [Image & Video Generation](#image--video-generation) (171) | [Media & Streaming](#media--streaming) (86) | [PDF & Documents](#pdf--documents) (105) |
+| [Image & Video Generation](#image--video-generation) (173) | [Media & Streaming](#media--streaming) (86) | [PDF & Documents](#pdf--documents) (105) |
 | [Apple Apps & Services](#apple-apps--services) (44) | [Notes & PKM](#notes--pkm) (69) | [Self-Hosted & Automation](#self-hosted--automation) (33) |
-| [Search & Research](#search--research) (344) | [iOS & macOS Development](#ios--macos-development) (29) | [Security & Passwords](#security--passwords) (54) |
+| [Search & Research](#search--research) (345) | [iOS & macOS Development](#ios--macos-development) (29) | [Security & Passwords](#security--passwords) (54) |
 | [Clawdbot Tools](#clawdbot-tools) (37) | [Transportation](#transportation) (111) | [Moltbook](#moltbook) (29) |
 | [CLI Utilities](#cli-utilities) (180) | [Personal Development](#personal-development) (53) | [Gaming](#gaming) (35) |
 | [Health & Fitness](#health--fitness) (87) | | |
@@ -246,6 +246,7 @@ If you believe a skill in this list should be flagged or has a security concern,
 - [emulo](https://clawhub.ai/ohad6k/emulo) - Load your mined personal profile so agents work like you.
 - [orca-replay](https://clawhub.ai/xizhuomengcontin/orca-replay) - Replay and debug past coding-agent runs from their recordings.
 
+- [zambo](https://clawhub.ai/zambodotdev/skills/zambo) - Give your AI hands: 120 MCP tools via one URL.
 > **[View all 1200 skills in Coding Agents & IDEs →](categories/coding-agents-and-ides.md)**
 </details>
 
@@ -411,7 +412,9 @@ You ship products with AI, but every launch still dies quietly because nobody po
 - [modellix](https://clawhub.ai/modellix/modellix) - Unified API for AI image and video generation.
 - [riffkit](https://clawhub.ai/riffkit/riffkit) - Riff a winning TikTok into your own product video.
 - [openshorts](https://clawhub.ai/mutonby/openshorts) - Turn long videos into vertical clips and publish them.
-> **[View all 171 skills in Image & Video Generation →](categories/image-and-video-generation.md)**
+- [ai-photo-restyler](https://clawhub.ai/beatra-ai/ai-photo-restyler) - Restyle photos as anime, manga, or watercolor, keeping subjects recognizable.
+- [viral-video-teardown-remake](https://clawhub.ai/beatra-ai/viral-video-teardown-remake) - Break down a short video's beats, then remake it.
+> **[View all 173 skills in Image & Video Generation →](categories/image-and-video-generation.md)**
 </details>
 
 <details>
@@ -490,8 +493,9 @@ You ship products with AI, but every launch still dies quietly because nobody po
 - [glasser](https://clawhub.ai/glasser-ai/glasser) - Search, price and run 1,000+ paid data APIs, one key.
 - [openclaw-search-skills](https://clawhub.ai/blessonism/skills/openclaw-search-skills) - Multi-source deep search with structured research reports.
 - [ask-human-expert](https://clawhub.ai/maxko87/ask-human-expert) - Ask human experts for written or voice answers, or calls.
+- [keenable-web-search](https://clawhub.ai/keenable/keenable-web-search) - Keyless web search for research, news and docs via Keenable.
 
-> **[View all 344 skills in Search & Research →](categories/search-and-research.md)**
+> **[View all 345 skills in Search & Research →](categories/search-and-research.md)**
 </details>
 
 <details>
@@ -1020,6 +1024,7 @@ You ship products with AI, but every launch still dies quietly because nobody po
 - [allstock-data](https://clawskills.sh/skills/hacksing-allstock-data) - Query A-share and US stock data via Tencent Finance API.
 - [amadeus-hotels](https://clawskills.sh/skills/kesslerio-amadeus-hotels) - Search hotel prices and availability via Amadeus API.
 - [amazon-competitor-analyzer](https://clawskills.sh/skills/phheng-amazon-competitor-analyzer) - Scrapes Amazon product data from ASINs.
+- [amazon-keyword-research](https://clawhub.ai/phheng/amazon-keyword-research) - Amazon long-tail keywords, competition and opportunity scoring.
 - [amazon-orders](https://clawskills.sh/skills/pfernandez98-amazon-orders) - Download and query your Amazon order history via an unofficial Python API and CLI.
 - [anylist](https://clawskills.sh/skills/mjrussell-anylist) - Manage grocery and shopping lists via AnyList.
 - [atoship](https://clawskills.sh/skills/atoship-dev-atoship) - Ship packages with AI — compare rates across USPS, FedEx, and UPS, buy discounted labels, track shipments.

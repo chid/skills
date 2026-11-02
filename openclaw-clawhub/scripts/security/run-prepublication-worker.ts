@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -12,6 +13,7 @@ import {
   redactWorkerPublicErrorMessage,
   redactWorkerPublicText,
 } from "../lib/workerRedaction";
+import { projectSkillSpectorReport } from "./clawscan-diagnostic-skillspector";
 import {
   clawScanExposure,
   type ClawScanExposure,
@@ -24,10 +26,12 @@ import {
   type ClaimedJob,
   resolveClawScanTarget,
   type StoredLlmAnalysis,
+  type SkillSpectorAnalysis,
   validateClawScanArtifactForClawHubProfile,
   writeArtifactWorkspace,
 } from "./run-codex-scan-worker";
 import { securityScannerEnvironment } from "./securityModelPolicy";
+import { isAdjudicableSkillSpectorResult } from "./skillSpectorReportPolicy";
 
 type ClaimedPrePublicationAttempt = {
   attemptId: Id<"publishAttempts">;
@@ -87,6 +91,7 @@ type ClawScanResult = {
   check: WorkerCheckResult;
   analysis?: StoredLlmAnalysis;
   aigAnalysis?: AigAnalysis;
+  skillSpectorAnalysis?: SkillSpectorAnalysis;
 };
 
 type ProcessAttemptDeps = {
@@ -450,6 +455,7 @@ function collectClawScanScannerFailures(
     if (value === undefined) continue;
     const scannerRecord = asRecord(value);
     const status = readString(scannerRecord, ["status"]) ?? "unknown";
+    if (scanner === "skillspector" && isAdjudicableSkillSpectorResult(scannerRecord)) continue;
     if (status !== "completed") {
       const error = readString(scannerRecord, ["error"]);
       const errorTail = error ? publicText(error.slice(-450), 450) : undefined;
@@ -465,6 +471,7 @@ function storedAnalysisFromClawScanArtifact(
 ): {
   analysis?: StoredLlmAnalysis;
   aigAnalysis?: AigAnalysis;
+  skillSpectorAnalysis?: SkillSpectorAnalysis;
   error?: string;
 } {
   const record = asRecord(artifact);
@@ -497,7 +504,11 @@ function storedAnalysisFromClawScanArtifact(
   try {
     if (!record) throw new Error("ClawScan artifact was missing");
     const mapped = validateClawScanArtifactForClawHubProfile(record, requiredScanners);
-    return { aigAnalysis: mapped.aigAnalysis, analysis: mapped.llmAnalysis };
+    return {
+      aigAnalysis: mapped.aigAnalysis,
+      analysis: mapped.llmAnalysis,
+      skillSpectorAnalysis: mapped.skillSpectorAnalysis,
+    };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "ClawScan artifact was invalid" };
   }
@@ -537,6 +548,94 @@ function clawScanCheckResult(analysis: StoredLlmAnalysis): WorkerCheckResult {
   };
 }
 
+// Failure diagnostics must never publish source/provider text, even after redaction.
+function diagnosticFingerprint(value: string | Buffer | null | undefined) {
+  return {
+    present: value != null,
+    bytes: value == null ? null : Buffer.byteLength(value),
+    sha256: value == null ? null : createHash("sha256").update(value).digest("hex"),
+  };
+}
+
+function completionDeliveryDiagnostic(error: unknown) {
+  let message: string | undefined;
+  let safeError = "";
+  try {
+    const rawMessage = error instanceof Error ? error.message : error;
+    message = typeof rawMessage === "string" ? rawMessage : undefined;
+    safeError = message && message.length <= 4_096 ? publicText(message, 4_096) : "";
+  } catch {
+    // A diagnostic must not replace the original completion failure.
+  }
+  const errorClass = /TooManyWrites|CommitterFullError|Too many writes in a short period/i.test(
+    safeError,
+  )
+    ? "capacity"
+    : /Publish attempt (?:check claim is not active|artifact fingerprint does not match scanned input|is already finalizing)/i.test(
+          safeError,
+        )
+      ? "claim"
+      : /\bUnauthorized\b/.test(safeError)
+        ? "authentication"
+        : /ArgumentValidationError|ReturnValidationError|Could not serialize|Unsupported type/.test(
+              safeError,
+            )
+          ? "validation"
+          : /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket hang up/i.test(safeError)
+            ? "transport"
+            : "other";
+  // Only retain a canonical Convex prefix, never a request-like string in artifact text.
+  const requestId =
+    safeError
+      .match(
+        /^(?:Error:\s*)?(?:\[CONVEX [A-Z]\([A-Za-z0-9_/:.-]+\)\]\s*)?\[Request ID:\s*([a-f0-9]{16})\](?:\s|$)/i,
+      )?.[1]
+      ?.toLowerCase() ?? null;
+  return { class: errorClass, requestId, ...diagnosticFingerprint(message) };
+}
+
+function nativeScannerDiagnostic(value: unknown) {
+  const scanner = asRecord(value);
+  const error = typeof scanner?.error === "string" ? scanner.error : undefined;
+  // Only classify bounded redacted errors; hashes distinguish every other error.
+  const safeError = error && error.length <= 4_096 ? publicText(error, 4_096) : "";
+  const errorClass = !error
+    ? scanner?.error == null || error === ""
+      ? "none"
+      : "invalid"
+    : safeError.endsWith("aig-skill-scan did not write SARIF output.")
+      ? "missing_sarif"
+      : safeError.endsWith("aig-skill-scan returned invalid SARIF 2.1.0 JSON")
+        ? "invalid_sarif"
+        : "other";
+  let raw = { present: scanner?.raw != null, bytes: null, sha256: null } as ReturnType<
+    typeof diagnosticFingerprint
+  >;
+  try {
+    // Raw hashes cover the parsed JSON serialization, not original SARIF bytes.
+    if (raw.present) raw = diagnosticFingerprint(JSON.stringify(scanner?.raw));
+  } catch {
+    // Deep/unserializable untrusted JSON must not replace the scan failure.
+  }
+  const boundedInteger = (entry: unknown, maximum: number) =>
+    typeof entry === "number" && Number.isSafeInteger(entry) && entry >= 0 && entry <= maximum
+      ? entry
+      : null;
+  const status = scanner?.status;
+  return {
+    status: !scanner
+      ? "missing"
+      : typeof status === "string" &&
+          ["pending", "running", "completed", "partial", "failed", "skipped"].includes(status)
+        ? status
+        : "unknown",
+    exitCode: boundedInteger(scanner?.exitCode, 255),
+    durationMs: boundedInteger(scanner?.durationMs, 86_400_000),
+    error: { class: errorClass, ...diagnosticFingerprint(error || undefined) },
+    raw,
+  };
+}
+
 export async function runNativeClawScan(
   job: ClaimedJob,
   workspace: string,
@@ -557,6 +656,7 @@ export async function runNativeClawScan(
   }
 
   onExposure?.(clawScanExposure());
+  const startedAt = Date.now();
   const output = await runCommand(command, args, {
     cwd: workspace,
     env: {
@@ -565,14 +665,48 @@ export async function runNativeClawScan(
     },
     timeoutMs: clawScanTimeoutMs(),
   });
+  const durationMs = Date.now() - startedAt;
   let artifact: unknown;
+  let artifactBytes: Buffer | undefined;
+  let artifactPresence: "missing" | "unreadable" | "malformed" | "invalid_schema" | "present" =
+    "missing";
   try {
-    artifact = JSON.parse(await readFile(artifactPath, "utf8"));
-  } catch {
+    artifactBytes = await readFile(artifactPath);
+    artifactPresence = "malformed";
+    artifact = JSON.parse(artifactBytes.toString("utf8"));
+    const root = asRecord(artifact);
+    artifactPresence =
+      root?.schemaVersion === "clawscan-run-v1" && root.profile === "clawhub"
+        ? "present"
+        : "invalid_schema";
+  } catch (error) {
+    if (!artifactBytes)
+      artifactPresence =
+        (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "unreadable";
     artifact = undefined;
   }
   onExposure?.(clawScanExposure(artifact));
+  const logFailureDiagnostic = () => {
+    const root = artifactPresence === "present" ? asRecord(artifact) : undefined;
+    const scanners = asRecord(root?.scanners);
+    const scanner = asRecord(scanners?.skillspector);
+    logger.info(
+      {
+        attemptId: String(job.job._id),
+        event: "prepublication_clawscan_failure_diagnostic",
+        exitCode: output.code,
+        durationMs,
+        artifact: { ...diagnosticFingerprint(artifactBytes), presence: artifactPresence },
+        scanners: Object.fromEntries(
+          REQUIRED_SKILL_SCANNERS.map((name) => [name, nativeScannerDiagnostic(scanners?.[name])]),
+        ),
+        ...(root ? { skillSpector: projectSkillSpectorReport(scanner?.raw) } : {}),
+      },
+      "pre-publication scanner completeness diagnostic",
+    );
+  };
   if (output.code !== 0) {
+    logFailureDiagnostic();
     return {
       check: {
         status: "failed",
@@ -585,6 +719,7 @@ export async function runNativeClawScan(
 
   const parsed = storedAnalysisFromClawScanArtifact(artifact, job.job.targetKind);
   if (parsed.error || !parsed.analysis) {
+    logFailureDiagnostic();
     return {
       check: {
         status: "failed",
@@ -595,6 +730,7 @@ export async function runNativeClawScan(
   return {
     analysis: parsed.analysis,
     aigAnalysis: parsed.aigAnalysis,
+    skillSpectorAnalysis: parsed.skillSpectorAnalysis,
     check: clawScanCheckResult(parsed.analysis),
   };
 }
@@ -615,6 +751,7 @@ async function completeAttempt(
   clawscan: WorkerCheckResult,
   clawscanAnalysis?: StoredLlmAnalysis,
   aigAnalysis?: AigAnalysis,
+  skillSpectorAnalysis?: SkillSpectorAnalysis,
 ) {
   return await client.action(api.publishAttempts.completePrePublicationChecks, {
     token,
@@ -625,6 +762,7 @@ async function completeAttempt(
     clawscan: checkResultForConvex(clawscan),
     ...(clawscanAnalysis ? { clawscanAnalysis } : {}),
     ...(aigAnalysis ? { aigAnalysis } : {}),
+    ...(skillSpectorAnalysis ? { skillSpectorAnalysis } : {}),
   });
 }
 
@@ -677,10 +815,11 @@ export async function processPrePublicationAttempt(
         "pre-publication attempt finalization retried",
       );
       return { completed: (result as { status?: string })?.status === "finalized", result };
-    } catch {
+    } catch (error) {
       logger.warn(
         {
           attemptId: attempt.attemptId,
+          completionError: completionDeliveryDiagnostic(error),
           event: "prepublication_attempt_finalization_retry_failed",
           kind: attempt.kind,
         },
@@ -742,6 +881,7 @@ export async function processPrePublicationAttempt(
     let clawscan: WorkerCheckResult;
     let clawscanAnalysis: StoredLlmAnalysis | undefined;
     let aigAnalysis: AigAnalysis | undefined;
+    let skillSpectorAnalysis: SkillSpectorAnalysis | undefined;
     const existingClawscanAnalysis = attempt.existingClawscanAnalysis;
     const existingAigAnalysis = attempt.existingAigAnalysis;
     if (
@@ -772,6 +912,7 @@ export async function processPrePublicationAttempt(
         });
         clawscanAnalysis = review.analysis;
         aigAnalysis = review.aigAnalysis;
+        skillSpectorAnalysis = review.skillSpectorAnalysis;
         clawscan = review.check;
       } catch (error) {
         clawscan = {
@@ -790,6 +931,7 @@ export async function processPrePublicationAttempt(
       clawscan,
       clawscanAnalysis,
       aigAnalysis,
+      skillSpectorAnalysis,
     );
     logger.info(
       {
@@ -810,6 +952,7 @@ export async function processPrePublicationAttempt(
       logger.error(
         {
           attemptId: attempt.attemptId,
+          completionError: completionDeliveryDiagnostic(error),
           durationMs: Date.now() - startedAt,
           event: "prepublication_attempt_secret_block_completion_failed",
           kind: attempt.kind,
@@ -822,6 +965,7 @@ export async function processPrePublicationAttempt(
       logger.warn(
         {
           attemptId: attempt.attemptId,
+          completionError: completionDeliveryDiagnostic(error),
           durationMs: Date.now() - startedAt,
           event: "prepublication_attempt_completion_failed",
           kind: attempt.kind,
@@ -837,10 +981,11 @@ export async function processPrePublicationAttempt(
     let result: unknown;
     try {
       result = await completeAttempt(client, token, attempt, failure, failure);
-    } catch {
+    } catch (completionError) {
       logger.warn(
         {
           attemptId: attempt.attemptId,
+          completionError: completionDeliveryDiagnostic(completionError),
           durationMs: Date.now() - startedAt,
           event: "prepublication_attempt_failure_record_failed",
           kind: attempt.kind,

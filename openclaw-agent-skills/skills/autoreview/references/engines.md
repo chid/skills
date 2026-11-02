@@ -22,6 +22,13 @@ produces no helper-validated machine status or helper isolation guarantees.
 - Codex tier: Ultrafast when active model catalog lists it; otherwise Codex silently
   sends standard tier. Raw `--codex-config service_tier=...` keeps its value.
 - `--codex-speed fast`: priority service. `--codex-speed default`: standard tier.
+- `--codex-no-fallback`: keep the selected Codex model and initial authentication
+  route. Disables all helper model retries and configured-provider rerouting,
+  including the missing-login shortcut before the first attempt. An explicit
+  initial provider remains selected; otherwise retain subscription authentication.
+  Failure remains `reviewer_unavailable` with no validated report. Codex-only and
+  opt-in; defaults, native recovery within the same provider, and the per-attempt
+  deadline remain unchanged. This flag does not grant model or account access.
 - Only Claude accepts `--fallback-model`.
 - Per-engine environment overrides: `AUTOREVIEW_<ENGINE>_*`.
 
@@ -63,9 +70,13 @@ Profile settings remain ignored. Force configured route before subscription atte
 - Projection requires Python 3.11 or `tomli`; default auth-only operation keeps
   existing fallback parser.
 
-- Selected route must use `https://api.openai.com/v1` + command authentication
-  with absolute external executable. Fixed arguments belong in executable's wrapper;
-  omitted/empty `auth.args` accepted.
+- Selected route must use an absolute `https` base URL with a host and no userinfo,
+  query, or fragment (including empty `?`/`#`). OpenAI-compatible Responses gateways
+  are supported; `http` is refused, including loopback. The configured URL is
+  projected unchanged. Command authentication requires an absolute external
+  executable. Fixed arguments belong in its wrapper; omitted/empty `auth.args` accepted.
+- Choose the endpoint in the named provider, not through `OPENAI_BASE_URL`: passing
+  that environment variable through does not guarantee the Codex client uses it.
 - Omitted `wire_api`/`requires_openai_auth`: keep Codex `responses`/`false` defaults,
   respectively. Optional auth timing/context settings: native defaults/semantics.
 

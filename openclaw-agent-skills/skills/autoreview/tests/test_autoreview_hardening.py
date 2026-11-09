@@ -3697,6 +3697,116 @@ class AutoreviewHardeningTests(unittest.TestCase):
                         self.assertNotIn("\x1b", result.stderr)
 
 
+    @unittest.skipUnless(os.name == "posix", "signals and process groups require POSIX")
+    def test_cli_interruption_publishes_no_verdict_after_child_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            repo = init_repo(root)
+            git(repo, "commit", "-q", "--allow-empty", "-m", "base")
+            (repo / "source.txt").write_text("review me\n")
+            ready = root / "ready"
+            executable = write_executable(root / "codex", f'''#!/usr/bin/env python3
+import os
+from pathlib import Path
+import sys
+import time
+if "--version" in sys.argv:
+    print("codex-cli 0.0.0-test")
+    raise SystemExit(0)
+if "login" in sys.argv:
+    raise SystemExit(1)
+sys.stdin.read()
+ready = Path({str(ready)!r})
+ready.with_suffix(".tmp").write_text(str(os.getpid()))
+ready.with_suffix(".tmp").replace(ready)
+time.sleep(60)
+''')
+            # Empty homes and an inert CLI keep this process test offline and unauthenticated.
+            env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": str(root),
+                   "USERPROFILE": str(root), "CODEX_HOME": str(root)}
+            if "AUTOREVIEW_GIT" in os.environ:
+                env["AUTOREVIEW_GIT"] = os.environ["AUTOREVIEW_GIT"]
+            cases = ((signal.SIGTERM, True, None), (signal.SIGINT, True, None),
+                     (signal.SIGTERM, False, None), (signal.SIGTERM, False, "stderr"),
+                     (signal.SIGTERM, True, "stdout"), (signal.SIGTERM, False, "both"))
+            for signum, writable, closed in cases:
+                with self.subTest(signum=signum, writable=writable, closed=closed):
+                    ready.unlink(missing_ok=True)
+                    destination = root / f"status-{signum}-{writable}-{closed}"
+                    destination.mkdir()
+                    sidecar = destination / "status.json"
+                    report, human = root / "result.json", root / "result.txt"
+                    argv = [sys.executable, str(SCRIPT), "--mode", "local", "--engine", "codex",
+                            "--codex-bin", str(executable), "--codex-no-fallback", "--no-web-search",
+                            "--status-output", str(sidecar), "--json-output", str(report),
+                            "--output", str(human)]
+                    with subprocess.Popen(argv, cwd=repo, env=env, text=True,
+                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE) as proc:
+                        try:
+                            deadline = time.monotonic() + 20
+                            while not ready.exists() and proc.poll() is None and time.monotonic() < deadline:
+                                time.sleep(0.01)
+                            self.assertTrue(ready.exists(), "inert reviewer did not start")
+                            child_pid = int(ready.read_text())
+                            if not writable:
+                                destination.rmdir()  # Simulate storage lost after output preflight.
+                            # Cancellation can also close the observer's diagnostic pipes.
+                            for name in ("stdout", "stderr"):
+                                if closed in (name, "both"):
+                                    getattr(proc, name).close()
+                                    setattr(proc, name, None)
+                            # Signal only the helper: its existing handler must stop the owned child.
+                            proc.send_signal(signum)
+                            stdout, stderr = proc.communicate(timeout=10)
+                            self.assertEqual(proc.returncode, 128 + signum, (stdout or "") + (stderr or ""))
+                            with self.assertRaises(ProcessLookupError):
+                                os.killpg(child_pid, 0)
+                            self.assertFalse(report.exists())
+                            self.assertFalse(human.exists())
+                            if not writable:
+                                self.assertFalse(sidecar.exists())
+                                if closed not in ("stderr", "both"):
+                                    self.assertIn("interrupted status could not be written", stderr)
+                                continue
+                            outcome = json.loads(sidecar.read_text())
+                            self.assertEqual(outcome["status"], "interrupted")
+                            self.assertEqual(outcome["reason"], "interrupted")
+                            self.assertEqual(outcome["exit_code"], 128 + signum)
+                            self.assertEqual(outcome["signal_number"], signum)
+                            self.assertFalse(outcome["report_produced"])
+                            self.assertFalse(outcome["timed_out"])
+                            self.assertIsNone(outcome["reviewer_exit_code"])
+                        finally:
+                            if proc.poll() is None:
+                                proc.terminate()
+                                proc.communicate(timeout=10)
+
+    @unittest.skipUnless(os.name == "posix", "closed pipe requires POSIX")
+    def test_output_finalization_preserves_normal_run_io_errors(self) -> None:
+        for code in (0, 1, 2, 143):
+            with self.subTest(code=code):
+                reader, writer = os.pipe()
+                os.close(reader)
+                stream = os.fdopen(writer, "w")
+                def pending_output():
+                    print("pending diagnostic", end="")
+                    return code
+                try:
+                    # Exercise real finalization against a closed pipe; only the
+                    # main result is supplied so ordinary exits stay observable.
+                    with mock.patch.dict(self.helper["sanitized_main"].__globals__,
+                                         {"main": pending_output}), \
+                            contextlib.redirect_stdout(stream), contextlib.redirect_stderr(io.StringIO()):
+                        if code == 143:
+                            self.assertEqual(self.helper["sanitized_main"](), code)
+                            stream.flush()  # Interpreter shutdown must not fail again.
+                        else:
+                            with self.assertRaises(BrokenPipeError):
+                                self.helper["sanitized_main"]()
+                finally:
+                    with contextlib.suppress(OSError):
+                        stream.close()
+
     @unittest.skipIf(os.name == "nt", "the executable fixture is POSIX-only")
     def test_cli_codex_model_fallback_opt_out_preserves_failed_terminal(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
@@ -3829,6 +3939,8 @@ class AutoreviewHardeningTests(unittest.TestCase):
             'model_instructions_file="/tmp/hostile.md"',
             'model_providers.review_api.auth.command="/tmp/credential-sink"',
             'hooks.PreToolUse.command="touch /tmp/owned"',
+            'app_server.listen="0.0.0.0:9000"',
+            'app_server.max_input_text_chars.extra=1',
         ):
             with self.subTest(override=override), self.assertRaisesRegex(
                 SystemExit,
@@ -3851,6 +3963,47 @@ class AutoreviewHardeningTests(unittest.TestCase):
             self.helper["codex_config_overrides"](args),
             args.codex_config,
         )
+
+    def test_codex_input_text_limit_is_forwarded_as_bounded_startup_config(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for value, expected in (
+                ("1", "1"), ("1048576", "1048576"), ("3145728", "3145728"),
+                ("4194304", "4194304"), (" 3145728 ", "3145728"),
+                ("\u00a03145728\u00a0", "3145728"), ("\n3145728\n", "3145728"),
+            ):
+                override = f"app_server.max_input_text_chars={value}"
+                canonical = f"app_server.max_input_text_chars={expected}"
+                for source in ("argument", "environment"):
+                    with self.subTest(value=value, source=source), mock.patch.dict(
+                        os.environ, {"AUTOREVIEW_CODEX_CONFIG": override}, clear=True,
+                    ):
+                        args = argparse.Namespace(
+                            codex_bin=sys.executable, web_search=False, thinking=None,
+                            codex_speed="default", codex_config=[override] if source == "argument" else [],
+                        )
+                        command = self.helper["codex_command"](
+                            args, root, root, root, root / "schema.json", root / "output.json",
+                            "fixture-model", auth_config=[],
+                        )
+                        self.assertIn(canonical, command)
+                        index = command.index(canonical)
+                        self.assertEqual(command[index - 1], "-c")
+                        self.assertLess(index, command.index("exec"))
+                        self.assertEqual(command.count(canonical), 1)
+
+    def test_codex_input_text_limit_rejects_invalid_values_from_both_inputs(self) -> None:
+        for value in ("0", "-1", "+1", "01", "4194305", "1.5", "1e6", '"3145728"',
+                      "true", "0x100000", "3_145_728", "١", "9" * 5000,
+                      "3145728\nnotify=['untrusted']"):
+            override = f"app_server.max_input_text_chars={value}"
+            for source in ("argument", "environment"):
+                with self.subTest(value=value[:40], source=source), mock.patch.dict(
+                    os.environ, {"AUTOREVIEW_CODEX_CONFIG": override}, clear=True,
+                ), self.assertRaisesRegex(SystemExit, "integer from 1 to 4194304"):
+                    self.helper["codex_config_overrides"](argparse.Namespace(
+                        codex_config=[override] if source == "argument" else [],
+                    ))
 
     def test_codex_speed_override_accepts_ultrafast(self) -> None:
         override = self.helper["codex_speed_override"]

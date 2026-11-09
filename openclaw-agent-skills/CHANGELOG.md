@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Pin the shared source-release workflow to a reviewed commit with complete release listing and exact-byte draft retry checks.
+
+- Update the development Node.js types to 26.6.6 while retaining Node.js 26 and the Python 3.10 installed-helper contract.
+
+- Retain the platform timeout for CodeQL instead of imposing a shorter scan budget.
+
+- Scan main daily with CodeQL while preserving pull request and manual scans and the existing skill validation and release gates.
+
+- Resolve Agent Transcript and Team Handoff commands from their installed skill directories. Keep Crabbox E2E guidance conditional on the requested or consumer-required proof scope.
+- Avoid installing or caching the development typechecker in Python-only CI validation groups; retain typechecking in the full and core groups.
 - Make `autoreview --no-web-search` explicitly disable Codex web search instead of leaving cached search enabled.
 - Add `autoreview --codex-no-fallback` to keep reviews on the selected Codex model and authentication route, refusing model or configured-provider substitution while preserving native recovery within that route.
 - Recognize current Codex terminal refresh-token messages, preserving configured-provider recovery by default and sanitized refusal when fallback is disabled.

@@ -9,7 +9,7 @@ import {
   createHttpModuleMocks,
   createRegistryModuleMocks,
   createUiModuleMocks,
-  makeGlobalOpts,
+  makeGlobalOpts as makeOpts,
 } from "../../../test/cliCommandTestKit.js";
 
 const authTokenMocks = createAuthTokenModuleMocks();
@@ -40,10 +40,6 @@ const realUi = await vi.importActual<typeof import("../ui.js")>("../ui.js");
 async function makeTmpWorkdir() {
   const root = await mkdtemp(join(tmpdir(), "clawhub-publish-"));
   return root;
-}
-
-function makeOpts(workdir: string) {
-  return makeGlobalOpts(workdir);
 }
 
 afterEach(() => {
@@ -217,8 +213,9 @@ describe("cmdPublish", () => {
         );
         expect(caught).toBe(failure);
         expect(realHttp.getHttpErrorStatus(caught)).toBe(fixture.status);
+        // Retry-After on a non-429 is a retry hint, not a rate-limit reset.
         expect((caught as Error).message).toBe(
-          `${fixture.label}: HTTP ${fixture.status} (Request ID: 0123456789abcdef): Request rejected (retry in 53s, reset in 53s)`,
+          `${fixture.label}: HTTP ${fixture.status} (Request ID: 0123456789abcdef): Request rejected (retry in 53s)`,
         );
         expect(tickets).toBe(2);
         expect(httpMocks.uploadBinary).toHaveBeenCalledTimes(fixture.uploads);

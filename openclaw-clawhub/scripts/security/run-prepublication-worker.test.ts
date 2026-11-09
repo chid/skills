@@ -5,10 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
+import { ClawScanContainerCleanupError } from "./clawscan-docker-cleanup";
 import { summarizeClawScanExposure } from "./clawscan-exposure";
 import partialReport from "./fixtures/skillspector-usable-partial.json";
 import {
   DEFAULT_PREPUBLICATION_CLAWSCAN_TIMEOUT_MS,
+  clawScanTimeoutMs,
   claimBatchDrainedQueue,
   claimPrePublicationAttempt,
   claimPrePublicationBatch,
@@ -118,7 +120,6 @@ process.exit(${exitCode});
         leaseToken: attempt.claimId,
         source: "pre-publication",
         targetKind: "skillVersion",
-        waitForVtUntil: 0,
       },
       target: {},
     },
@@ -164,6 +165,36 @@ const attempt = {
 };
 
 describe("pre-publication worker", () => {
+  it("preserves the artifact and requests worker stop when MCP cleanup is unconfirmed", async () => {
+    let preserved: string | undefined;
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
+    const result = await processPrePublicationAttempt(client, "fixture", attempt, {
+      writeWorkspace: async (_job, workspace) => {
+        preserved = workspace;
+        await mkdir(join(workspace, "artifact"));
+        await writeFile(join(workspace, "artifact/SKILL.md"), "retained mounted fixture");
+      },
+      runTruffleHog: async () => ({ status: "clean" }),
+      runClawScan: async () => {
+        throw new ClawScanContainerCleanupError("ClawScan Docker cleanup unconfirmed");
+      },
+    });
+    expect(result).toEqual({ completed: false, result: undefined, workerMustStop: true });
+    expect(client.action).not.toHaveBeenCalled();
+    tempDirs.push(preserved!);
+    expect(await readFile(join(preserved!, "artifact/SKILL.md"), "utf8")).toBe(
+      "retained mounted fixture",
+    );
+  });
+  it("propagates cleanup stop across the completed batch instead of swallowing it as an ordinary attempt failure", async () => {
+    const processAttempt = vi.fn(async () => {
+      throw new ClawScanContainerCleanupError("unconfirmed");
+    });
+    expect(await processPrePublicationBatch([attempt], processAttempt)).toEqual([
+      { completed: false, result: undefined, workerMustStop: true },
+    ]);
+  });
+
   it("allows production ClawScan runs up to 15 minutes by default", () => {
     expect(DEFAULT_PREPUBLICATION_CLAWSCAN_TIMEOUT_MS).toBe(900_000);
   });
@@ -257,6 +288,22 @@ describe("pre-publication worker", () => {
     expect(claimBatchDrainedQueue(0, 5, 6)).toBe(true);
     expect(claimBatchDrainedQueue(1, 5, 6)).toBe(false);
     expect(claimBatchDrainedQueue(0, 6, 6)).toBe(false);
+  });
+
+  it("forwards the optional source on every batch claim without changing targeting filters", async () => {
+    const client = { action: vi.fn().mockResolvedValue(null) };
+    const scannerSource = "b08e2907eb60b33bf712b07673aff565c13d9ad7";
+    await claimPrePublicationBatch(client, "fixture", 2, {}, scannerSource);
+    expect(client.action.mock.calls.map((call) => call[1])).toEqual([
+      { token: "fixture", preferRetry: true, scannerSource },
+      { token: "fixture", scannerSource },
+    ]);
+    client.action.mockClear();
+    await claimPrePublicationBatch(client, "fixture", 2);
+    expect(client.action.mock.calls.map((call) => call[1])).toEqual([
+      { token: "fixture", preferRetry: true },
+      { token: "fixture" },
+    ]);
   });
 
   it("requires the TruffleHog image to be pinned by digest", () => {
@@ -1068,7 +1115,6 @@ JSON
                 leaseToken: attempt.claimId,
                 source: "pre-publication",
                 targetKind: "skillVersion",
-                waitForVtUntil: 0,
               },
               target: {},
             },
@@ -1174,7 +1220,6 @@ JSON
                 leaseToken: attempt.claimId,
                 source: "pre-publication",
                 targetKind: "packageRelease",
-                waitForVtUntil: 0,
               },
               target: { package: { family: "code-plugin" } },
             },
@@ -1497,7 +1542,6 @@ process.exit(1);
             leaseToken: attempt.claimId,
             source: "pre-publication",
             targetKind: "skillVersion",
-            waitForVtUntil: 0,
           },
           target: {},
         },
@@ -1560,7 +1604,6 @@ JSON
               leaseToken: attempt.claimId,
               source: "pre-publication",
               targetKind: "skillVersion",
-              waitForVtUntil: 0,
             },
             target: {},
           },
@@ -1615,7 +1658,6 @@ JSON
               leaseToken: attempt.claimId,
               source: "pre-publication",
               targetKind: "skillVersion",
-              waitForVtUntil: 0,
             },
             target: {},
           },
@@ -1671,7 +1713,6 @@ JSON
               leaseToken: attempt.claimId,
               source: "pre-publication",
               targetKind: "skillVersion",
-              waitForVtUntil: 0,
             },
             target: {},
           },
@@ -1726,7 +1767,6 @@ JSON
               leaseToken: attempt.claimId,
               source: "pre-publication",
               targetKind: "skillVersion",
-              waitForVtUntil: 0,
             },
             target: {},
           },
@@ -1839,4 +1879,13 @@ exit 183
     if (previousCommand === undefined) delete process.env.PREPUBLICATION_TRUFFLEHOG_COMMAND;
     else process.env.PREPUBLICATION_TRUFFLEHOG_COMMAND = previousCommand;
   });
+});
+
+it("gives only the qualified plugin subprocess stage headroom beyond native 30m", () => {
+  vi.stubEnv("PREPUBLICATION_CLAWSCAN_TIMEOUT_MS", "900000");
+  expect(clawScanTimeoutMs()).toBe(900000);
+  expect(clawScanTimeoutMs(true)).toBe(3600000);
+  vi.stubEnv("PREPUBLICATION_CLAWSCAN_TIMEOUT_MS", "123456");
+  expect(clawScanTimeoutMs()).toBe(123456);
+  expect(clawScanTimeoutMs(true)).toBe(3600000);
 });

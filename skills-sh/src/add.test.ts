@@ -61,6 +61,26 @@ describe('add command', () => {
     }
   });
 
+  it('finds an explicitly requested nested skill below a root skill', () => {
+    const sourceDir = join(testDir, 'source');
+    const nestedDir = join(sourceDir, 'discovery', 'nested-skill');
+    mkdirSync(nestedDir, { recursive: true });
+    writeFileSync(join(sourceDir, 'SKILL.md'), '---\nname: root-skill\ndescription: Root\n---\n');
+    const nestedContent = '---\nname: nested-skill\ndescription: Nested\n---\nNested content\n';
+    writeFileSync(join(nestedDir, 'SKILL.md'), nestedContent);
+
+    const result = runCli(
+      ['add', sourceDir, '--skill', 'nested-skill', '-a', 'universal', '-y'],
+      testDir
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(readFileSync(join(testDir, '.agents/skills/nested-skill/SKILL.md'), 'utf8')).toBe(
+      nestedContent
+    );
+    expect(existsSync(join(testDir, '.agents/skills/root-skill'))).toBe(false);
+  });
+
   it('should show error when no source provided', () => {
     const result = runCli(['add'], testDir);
     expect(result.stdout).toContain('ERROR');
@@ -554,16 +574,47 @@ description: Test
     expect(result.exitCode).toBe(1);
   });
 
-  it('should support add command aliases (a, i, install)', () => {
-    // Test that aliases work (just check they show missing source error)
-    const resultA = runCli(['a'], testDir);
-    const resultI = runCli(['i'], testDir);
-    const resultInstall = runCli(['install'], testDir);
+  it('should reject an invalid agent name before reading the source', () => {
+    const missingSource = join(testDir, 'does-not-exist');
 
-    // All should show the same "missing source" error
+    const result = runCli(['add', missingSource, '--agent', 'claude_code'], testDir);
+    expect(result.stdout).toContain('Invalid agents: claude_code');
+    expect(result.stdout).not.toContain('Source:');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('should report an invalid agent name in --json mode before reading the source', () => {
+    const missingSource = join(testDir, 'does-not-exist');
+
+    const result = runCli(
+      ['add', missingSource, '-y', '--json', '--agent', 'claude_code'],
+      testDir
+    );
+    expect(JSON.parse(result.stdout)).toEqual([
+      { status: 'failed', error: 'Invalid agents: claude_code' },
+    ]);
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('should support add command alias a', () => {
+    const resultA = runCli(['a'], testDir);
     expect(resultA.stdout).toContain('Missing required argument: source');
-    expect(resultI.stdout).toContain('Missing required argument: source');
-    expect(resultInstall.stdout).toContain('Missing required argument: source');
+  });
+
+  it('should restore from lock file with i/install and no source', () => {
+    for (const command of ['i', 'install']) {
+      const result = runCli([command, '--no-frozen-lockfile'], testDir);
+      expect(result.stdout).toContain('No project skills found in skills-lock.json');
+      expect(result.stdout).not.toContain('Missing required argument: source');
+    }
+  });
+
+  it('should add with i/install when a source is given', () => {
+    for (const command of ['i', 'install']) {
+      const result = runCli([command, './missing-skill', '-y'], testDir);
+      expect(result.stdout).toContain('Local path does not exist');
+      expect(result.stdout).not.toContain('skills-lock.json');
+    }
   });
 
   it('should restore from lock file with experimental_install', () => {
@@ -1175,13 +1226,13 @@ describe('parseAddOptions', () => {
     const result = parseAddOptions(['source', '--metadata', '{not-json}']);
 
     expect(result.options.metadata).toBeUndefined();
-    expect(result.errors).toEqual(['--metadata must be valid JSON']);
+    expect(result.errors.map((e) => e.message)).toEqual(['--metadata must be valid JSON']);
   });
 
   it('should reject a missing metadata value', () => {
     const result = parseAddOptions(['source', '--metadata']);
 
-    expect(result.errors).toEqual(['--metadata requires a JSON value']);
+    expect(result.errors.map((e) => e.message)).toEqual(['--metadata requires a JSON value']);
   });
 
   it('should parse a single --subagent value', () => {

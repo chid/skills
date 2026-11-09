@@ -12,6 +12,7 @@
 
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
+import { AGENT_PROJECT_SKILL_DIRS } from './agents.ts';
 import { parseFrontmatter } from './frontmatter.ts';
 import { sanitizeMetadata } from './sanitize.ts';
 import { getGitHubHost } from './github-host.ts';
@@ -82,6 +83,8 @@ export interface TreeEntry {
   type: 'blob' | 'tree';
   sha: string;
   size?: number;
+  /** Git file mode, e.g. `120000` for a symlink (passed through from the Trees API). */
+  mode?: string;
 }
 
 export interface RepoTree {
@@ -310,36 +313,7 @@ const PRIORITY_PREFIXES = [
   'skills/.curated/',
   'skills/.experimental/',
   'skills/.system/',
-  '.agents/skills/',
-  '.claude/skills/',
-  '.cline/skills/',
-  '.codebuddy/skills/',
-  '.codex/skills/',
-  '.commandcode/skills/',
-  '.continue/skills/',
-  '.factory/skills/',
-  '.github/skills/',
-  '.goose/skills/',
-  '.grok/skills/',
-  '.iflow/skills/',
-  '.junie/skills/',
-  '.kilo/skills/',
-  '.kilocode/skills/',
-  '.kimchi/skills/',
-  '.kiro/skills/',
-  '.minimax/skills/',
-  '.mux/skills/',
-  '.neovate/skills/',
-  '.opencode/skills/',
-  '.openhands/skills/',
-  '.pi/skills/',
-  '.posit/assistant/skills/',
-  '.qoder/skills/',
-  '.roo/skills/',
-  '.trae/skills/',
-  '.windsurf/skills/',
-  '.zcode/skills/',
-  '.zencoder/skills/',
+  ...AGENT_PROJECT_SKILL_DIRS.map((dir) => `${dir}/`),
 ];
 
 /**
@@ -356,7 +330,7 @@ export function findSkillMdPaths(
 ): string[] {
   // Find all blob entries that are SKILL.md files (case-insensitive)
   const allSkillMds = tree.tree
-    .filter((e) => e.type === 'blob' && e.path.toLowerCase().endsWith('skill.md'))
+    .filter((e) => e.type === 'blob' && e.path.split('/').at(-1)!.toLowerCase() === 'skill.md')
     .map((e) => e.path);
 
   // Apply subpath filter
@@ -729,8 +703,10 @@ export async function tryBlobInstall(
       rawContent: skill.content,
       metadata: skill.metadata,
       files,
-      snapshotHash:
-        files.length === download!.files.length ? download!.hash : computeSnapshotHash(files),
+      // Hash locally rather than trusting download.hash. The server's hashSkillFiles
+      // (add-skill-telemetry) joins path and contents with \0 separators, so it never
+      // matches computeSkillFolderHash and `check` would flag every fresh add as outdated.
+      snapshotHash: computeSnapshotHash(files),
       repoPath: skill.mdPath,
     };
   });
